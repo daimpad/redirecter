@@ -2,13 +2,15 @@ Options -Indexes
 
 RewriteEngine On
 
-# Statische Dateien und PHP-Skripte direkt durchlassen
+# Statische Dateien und Verzeichnisse direkt durchlassen
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# index.php direkt erreichbar lassen
-RewriteRule ^index\.php$ - [L]
-
 # Alle anderen Anfragen als Slug an redirect.php weiterleiten
 RewriteRule ^([A-Za-z0-9_-]+)/?$ redirect.php?s=$1 [L,QSA]
+
+# Interne Hilfsdateien vor direktem HTTP-Zugriff schützen
+<FilesMatch "^(config|functions)\.php$">
+    Require all denied
+</FilesMatch>

@@ -1,78 +1,15 @@
 <?php
 declare(strict_types=1);
 
-const DATA_FILE = __DIR__ . '/data.json';
-const SLUG_MAX_LEN = 64;
-const RANDOM_SLUG_LEN = 6;
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
 
-// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
-
-function loadData(): array
-{
-    if (!is_file(DATA_FILE)) {
-        return [];
-    }
-    $json = file_get_contents(DATA_FILE);
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : [];
-}
-
-/**
- * Schreibt $slug => $url atomar in DATA_FILE.
- * Die Duplikat-Prüfung erfolgt innerhalb des Locks, um Race Conditions zu vermeiden.
- * Rückgabe: null = Erfolg | 'SLUG_EXISTS' = Slug vergeben | sonstige Fehlermeldung
- */
-function saveData(string $slug, string $url): ?string
-{
-    $fp = fopen(DATA_FILE, 'c+');
-    if ($fp === false) {
-        return 'Datei konnte nicht geöffnet werden.';
-    }
-
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-        return 'Datei ist gesperrt – bitte erneut versuchen.';
-    }
-
-    // Nach Lock-Erwerb erneut lesen — maßgeblicher Stand
-    fseek($fp, 0);
-    $existing = stream_get_contents($fp);
-    $stored   = json_decode($existing, true);
-    if (!is_array($stored)) {
-        $stored = [];
-    }
-
-    // Kollisionsprüfung innerhalb des Locks
-    if (isset($stored[$slug])) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return 'SLUG_EXISTS';
-    }
-
-    $stored[$slug] = $url;
-
-    ftruncate($fp, 0);
-    fseek($fp, 0);
-    $written = fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
-
-    return $written === false ? 'Schreibfehler.' : null;
-}
-
-function generateSlug(): string
-{
-    return substr(bin2hex(random_bytes(RANDOM_SLUG_LEN)), 0, RANDOM_SLUG_LEN);
-}
-
-// ── Formular-Verarbeitung ─────────────────────────────────────────────────────
+requireAuth();
 
 $error   = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF-Schutz: einfaches Token-Muster via Session
     session_start();
 
     $token = $_POST['csrf_token'] ?? '';
@@ -82,23 +19,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rawUrl  = trim($_POST['url']  ?? '');
         $rawSlug = trim($_POST['slug'] ?? '');
 
-        // URL validieren
         if ($rawUrl === '') {
             $error = 'Bitte eine Ziel-URL angeben.';
         } elseif (!filter_var($rawUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $rawUrl)) {
             $error = 'Bitte eine gültige HTTP/HTTPS-URL eingeben.';
         } else {
-            // Slug normalisieren
             if ($rawSlug === '') {
-                $slug = generateSlug();
-                // Kollisionen bei zufälligem Slug vermeiden
+                $slug     = generateSlug();
                 $existing = loadData();
                 $attempts = 0;
                 while (isset($existing[$slug]) && $attempts++ < 10) {
                     $slug = generateSlug();
                 }
             } else {
-                // Nur alphanumerische Zeichen, Bindestrich und Unterstrich
                 $slug = preg_replace('/[^A-Za-z0-9_-]/', '', $rawSlug);
                 $slug = substr($slug, 0, SLUG_MAX_LEN);
             }
@@ -113,9 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif ($writeError !== null) {
                     $error = 'Speicherfehler: ' . $writeError;
                 } else {
-                    $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                    $host    = htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8');
-                    $success = $scheme . '://' . $host . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
+                    $success = rtrim(BASE_URL, '/') . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
                 }
             }
         }
@@ -124,11 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     session_start();
 }
 
-// CSRF-Token für diesen Request erzeugen / erneuern
 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 $csrfToken = $_SESSION['csrf_token'];
 
-// ── Ausgabe ───────────────────────────────────────────────────────────────────
 header('Content-Type: text/html; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
@@ -221,11 +150,9 @@ header('X-Frame-Options: DENY');
 
         .alert-error   { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
         .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+        .alert-warning { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
 
-        .short-url {
-            font-weight: 700;
-            word-break: break-all;
-        }
+        .short-url { font-weight: 700; word-break: break-all; }
 
         a { color: #4f46e5; }
     </style>
@@ -233,6 +160,12 @@ header('X-Frame-Options: DENY');
 <body>
 <main class="card">
     <h1>URL-Shortener</h1>
+
+    <?php if (ADMIN_PASSWORD_HASH === ''): ?>
+        <div class="alert alert-warning" role="alert">
+            Kein Passwortschutz aktiv. Bitte <code>ADMIN_PASSWORD_HASH</code> in <code>config.php</code> setzen.
+        </div>
+    <?php endif; ?>
 
     <?php if ($error !== ''): ?>
         <div class="alert alert-error" role="alert">
