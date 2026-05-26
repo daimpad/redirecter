@@ -11,6 +11,9 @@ const DATA_FILE = __DIR__ . '/storage/data.json';
 const SLUG_MAX_LEN    = 64;
 const RANDOM_SLUG_LEN = 6;
 
+// Rate Limiting für Link-Erstellung (Anfragen pro Minute pro IP, 0 = deaktiviert)
+const RATE_LIMIT_MAX = 10;
+
 // Admin-Zugangsdaten für HTTP Basic Auth
 // Hash erzeugen: php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"
 // Leer lassen = Auth deaktiviert (nur für lokale Entwicklung)

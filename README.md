@@ -39,6 +39,9 @@ Alle Einstellungen befinden sich in **`config.php`**:
 // Base-URL der Installation (kein abschließender Slash)
 const BASE_URL = 'https://deinedomain.de';
 
+// Rate Limiting: max. Link-Erstellungen pro Minute pro IP (0 = deaktiviert)
+const RATE_LIMIT_MAX = 10;
+
 // Admin-Zugangsdaten
 const ADMIN_USER          = 'admin';
 const ADMIN_PASSWORD_HASH = ''; // leer = Auth deaktiviert
@@ -60,7 +63,7 @@ Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erre
 .
 ├── .htaccess          # Apache Rewrite-Regeln + Dateischutz
 ├── config.php         # Zentrale Konfiguration (nicht via HTTP erreichbar)
-├── functions.php      # Geteilte Funktionen: loadData, saveData, Auth (nicht via HTTP erreichbar)
+├── functions.php      # Geteilte Funktionen: loadData, saveData, deleteSlug, incrementHits, Auth, RateLimit (nicht via HTTP erreichbar)
 ├── index.php          # Admin-Formular + Speicher-Logik
 ├── redirect.php       # Slug → 301-Redirect
 └── storage/
@@ -81,6 +84,10 @@ Rufe `https://deinedomain.de/` auf. Das Formular hat zwei Felder:
 
 Bleibt der Slug leer, wird ein zufälliger 6-stelliger Hex-String generiert.
 
+### Kurzlinks verwalten
+
+Unterhalb des Formulars zeigt die Admin-Seite alle gespeicherten Links mit Slug, Ziel-URL, Klick-Zähler und Erstelldatum. Jeder Link kann per Klick auf „Löschen" entfernt werden (mit Bestätigungsdialog).
+
 ### Kurzlink aufrufen
 
 ```
@@ -93,12 +100,16 @@ Der Server antwortet mit einem **HTTP 301**-Redirect zur hinterlegten Ziel-URL.
 
 ```json
 {
-    "gh": "https://github.com",
-    "mein-link": "https://example.com/sehr/langer/pfad"
+    "gh": {
+        "url": "https://github.com",
+        "hits": 42,
+        "created": "2026-05-26"
+    }
 }
 ```
 
-Einträge können auch manuell in `storage/data.json` gepflegt werden.
+Einträge können auch manuell in `storage/data.json` gepflegt werden.  
+Legacy-Einträge im alten String-Format (`"slug": "url"`) werden beim ersten Redirect automatisch in das neue Format migriert.
 
 ## Performance
 
@@ -117,6 +128,7 @@ apt install php-apcu
 | Maßnahme | Details |
 |---|---|
 | **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.php` |
+| **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; APCu wenn verfügbar, Session als Fallback |
 | **CSRF-Schutz** | Session-Token, verglichen mit `hash_equals()` (Timing-safe) |
 | **Slug-Sanitizing** | Nur `[A-Za-z0-9_-]` erlaubt — Sonderzeichen werden entfernt |
 | **URL-Validierung** | `filter_var(FILTER_VALIDATE_URL)` + Pflicht-Präfix `http://` oder `https://` |
@@ -131,4 +143,4 @@ apt install php-apcu
 ## Einschränkungen
 
 - Für sehr hohe Gleichzeitigkeit (viele hundert Requests/Sekunde) ist eine Datenbank besser geeignet.
-- Es gibt keine Admin-Oberfläche zum Löschen oder Auflisten von Links — das erfordert direkten Zugriff auf `storage/data.json`.
+- `incrementHits()` schreibt bei jedem Redirect in die Datei — bei sehr hohem Traffic ist APCu als Hit-Puffer empfehlenswert.

@@ -11,18 +11,22 @@ if ($slug === '' || !preg_match('/^[A-Za-z0-9_-]+$/', $slug)) {
     exit('Ungültiger oder fehlender Slug.');
 }
 
-$data   = loadData();
-$target = $data[$slug] ?? null;
+$data  = loadData();
+$entry = $data[$slug] ?? null;
 
-if ($target === null) {
+if ($entry === null) {
     http_response_code(404);
     exit('Kurzlink nicht gefunden.');
 }
+
+$target = entryUrl($entry);
 
 if (!filter_var($target, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $target)) {
     http_response_code(500);
     exit('Ungültiges Ziel-URL.');
 }
+
+incrementHits($slug);
 
 header('Location: ' . $target, true, 301);
 exit();
