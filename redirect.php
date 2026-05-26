@@ -28,5 +28,6 @@ if (!filter_var($target, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', 
 
 incrementHits($slug);
 
+header('Referrer-Policy: no-referrer');
 header('Location: ' . $target, true, 301);
 exit();

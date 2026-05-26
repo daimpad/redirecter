@@ -63,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif ($writeError !== null) {
                             $error = 'Speicherfehler: ' . $writeError;
                         } else {
-                            $success = htmlspecialchars(rtrim(BASE_URL, '/'), ENT_QUOTES, 'UTF-8') . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
+                            $successRaw = rtrim(BASE_URL, '/') . '/' . $slug;
+                        $success    = htmlspecialchars($successRaw, ENT_QUOTES, 'UTF-8');
                         }
                     }
                 }
@@ -79,6 +80,8 @@ $allLinks   = loadData();
 header('Content-Type: text/html; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
+header('Referrer-Policy: strict-origin');
+header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; form-action 'self'; frame-ancestors 'none'");
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -243,6 +246,9 @@ header('X-Frame-Options: DENY');
         <div class="alert alert-success" role="alert">
             Kurzlink erstellt:&nbsp;
             <a class="short-url" href="<?= $success ?>" rel="noopener"><?= $success ?></a>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=<?= urlencode($successRaw) ?>"
+                 alt="QR-Code" width="120" height="120"
+                 style="display:block;margin-top:.85rem;border-radius:6px;">
         </div>
     <?php endif; ?>
 
