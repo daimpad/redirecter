@@ -18,10 +18,11 @@ function loadData(): array
 }
 
 /**
- * Schreibt $data atomar in DATA_FILE.
- * Gibt null bei Erfolg zurück, andernfalls eine Fehlermeldung.
+ * Schreibt $slug => $url atomar in DATA_FILE.
+ * Die Duplikat-Prüfung erfolgt innerhalb des Locks, um Race Conditions zu vermeiden.
+ * Rückgabe: null = Erfolg | 'SLUG_EXISTS' = Slug vergeben | sonstige Fehlermeldung
  */
-function saveData(array $data): ?string
+function saveData(string $slug, string $url): ?string
 {
     $fp = fopen(DATA_FILE, 'c+');
     if ($fp === false) {
@@ -33,17 +34,26 @@ function saveData(array $data): ?string
         return 'Datei ist gesperrt – bitte erneut versuchen.';
     }
 
-    // Aktuellen Inhalt erneut lesen (nach Lock-Erwerb)
+    // Nach Lock-Erwerb erneut lesen — maßgeblicher Stand
     fseek($fp, 0);
     $existing = stream_get_contents($fp);
     $stored   = json_decode($existing, true);
-    if (is_array($stored)) {
-        $data = array_merge($stored, $data);
+    if (!is_array($stored)) {
+        $stored = [];
     }
+
+    // Kollisionsprüfung innerhalb des Locks
+    if (isset($stored[$slug])) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return 'SLUG_EXISTS';
+    }
+
+    $stored[$slug] = $url;
 
     ftruncate($fp, 0);
     fseek($fp, 0);
-    $written = fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $written = fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
@@ -96,21 +106,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($slug === '') {
                 $error = 'Der Slug enthält keine gültigen Zeichen.';
             } else {
-                $data = loadData();
+                $writeError = saveData($slug, $rawUrl);
 
-                if (isset($data[$slug])) {
+                if ($writeError === 'SLUG_EXISTS') {
                     $error = 'Dieser Slug ist bereits vergeben. Bitte einen anderen wählen.';
+                } elseif ($writeError !== null) {
+                    $error = 'Speicherfehler: ' . $writeError;
                 } else {
-                    $data[$slug] = $rawUrl;
-                    $writeError  = saveData([$slug => $rawUrl]);
-
-                    if ($writeError !== null) {
-                        $error = 'Speicherfehler: ' . $writeError;
-                    } else {
-                        $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                        $host    = htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8');
-                        $success = $scheme . '://' . $host . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
-                    }
+                    $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                    $host    = htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8');
+                    $success = $scheme . '://' . $host . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
                 }
             }
         }
