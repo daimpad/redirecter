@@ -2,6 +2,10 @@ Options -Indexes
 
 RewriteEngine On
 
+# HTTP → HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
 # Statische Dateien und Verzeichnisse direkt durchlassen
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
