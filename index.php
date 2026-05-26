@@ -5,7 +5,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
 
 requireAuth();
-session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
 
 $error   = '';
 $success = '';
@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($slugToDel !== '') {
                 $delError = deleteSlug($slugToDel);
                 if ($delError === null) {
-                    $info = 'Kurzlink „' . htmlspecialchars($slugToDel, ENT_QUOTES, 'UTF-8') . '" wurde gelöscht.';
+                    $info = 'Kurzlink „' . $slugToDel . '" wurde gelöscht.';
                 } elseif ($delError !== 'SLUG_NOT_FOUND') {
                     $error = 'Löschen fehlgeschlagen: ' . $delError;
                 }
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif ($writeError !== null) {
                             $error = 'Speicherfehler: ' . $writeError;
                         } else {
-                            $success = rtrim(BASE_URL, '/') . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
+                            $success = htmlspecialchars(rtrim(BASE_URL, '/'), ENT_QUOTES, 'UTF-8') . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
                         }
                     }
                 }
@@ -248,7 +248,7 @@ header('X-Frame-Options: DENY');
 
     <?php if ($info !== ''): ?>
         <div class="alert alert-info" role="alert">
-            <?= $info ?>
+            <?= htmlspecialchars($info, ENT_QUOTES, 'UTF-8') ?>
         </div>
     <?php endif; ?>
 
@@ -310,12 +310,16 @@ header('X-Frame-Options: DENY');
                         $safeSlug   = htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
                         $targetUrl  = entryUrl($entry);
                         $safeTarget = htmlspecialchars($targetUrl, ENT_QUOTES, 'UTF-8');
-                        $shortUrl   = rtrim(BASE_URL, '/') . '/' . $safeSlug;
+                        $shortUrl   = htmlspecialchars(rtrim(BASE_URL, '/'), ENT_QUOTES, 'UTF-8') . '/' . $safeSlug;
                     ?>
                     <tr>
                         <td><a href="<?= $shortUrl ?>" rel="noopener" target="_blank"><?= $safeSlug ?></a></td>
                         <td class="col-url" title="<?= $safeTarget ?>">
-                            <a href="<?= $safeTarget ?>" rel="noopener" target="_blank"><?= $safeTarget ?></a>
+                            <?php if (preg_match('/^https?:\/\//i', $targetUrl)): ?>
+                                <a href="<?= $safeTarget ?>" rel="noopener noreferrer" target="_blank"><?= $safeTarget ?></a>
+                            <?php else: ?>
+                                <?= $safeTarget ?>
+                            <?php endif; ?>
                         </td>
                         <td class="col-hits"><?= entryHits($entry) ?></td>
                         <td class="col-date"><?= htmlspecialchars(entryCreated($entry), ENT_QUOTES, 'UTF-8') ?></td>
