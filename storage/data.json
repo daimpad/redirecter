@@ -1,0 +1,12 @@
+{
+    "gh": {
+        "url": "https://github.com",
+        "hits": 0,
+        "created": "2026-05-26"
+    },
+    "example": {
+        "url": "https://example.com/some/very/long/url/that/needs/shortening",
+        "hits": 0,
+        "created": "2026-05-26"
+    }
+}

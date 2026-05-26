@@ -1,134 +1,81 @@
 <?php
 declare(strict_types=1);
 
-const DATA_FILE = __DIR__ . '/data.json';
-const SLUG_MAX_LEN = 64;
-const RANDOM_SLUG_LEN = 6;
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
 
-// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
-
-function loadData(): array
-{
-    if (!is_file(DATA_FILE)) {
-        return [];
-    }
-    $json = file_get_contents(DATA_FILE);
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : [];
-}
-
-/**
- * Schreibt $slug => $url atomar in DATA_FILE.
- * Die Duplikat-Prüfung erfolgt innerhalb des Locks, um Race Conditions zu vermeiden.
- * Rückgabe: null = Erfolg | 'SLUG_EXISTS' = Slug vergeben | sonstige Fehlermeldung
- */
-function saveData(string $slug, string $url): ?string
-{
-    $fp = fopen(DATA_FILE, 'c+');
-    if ($fp === false) {
-        return 'Datei konnte nicht geöffnet werden.';
-    }
-
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-        return 'Datei ist gesperrt – bitte erneut versuchen.';
-    }
-
-    // Nach Lock-Erwerb erneut lesen — maßgeblicher Stand
-    fseek($fp, 0);
-    $existing = stream_get_contents($fp);
-    $stored   = json_decode($existing, true);
-    if (!is_array($stored)) {
-        $stored = [];
-    }
-
-    // Kollisionsprüfung innerhalb des Locks
-    if (isset($stored[$slug])) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return 'SLUG_EXISTS';
-    }
-
-    $stored[$slug] = $url;
-
-    ftruncate($fp, 0);
-    fseek($fp, 0);
-    $written = fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
-
-    return $written === false ? 'Schreibfehler.' : null;
-}
-
-function generateSlug(): string
-{
-    return substr(bin2hex(random_bytes(RANDOM_SLUG_LEN)), 0, RANDOM_SLUG_LEN);
-}
-
-// ── Formular-Verarbeitung ─────────────────────────────────────────────────────
+requireAuth();
+session_start();
 
 $error   = '';
 $success = '';
+$info    = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // CSRF-Schutz: einfaches Token-Muster via Session
-    session_start();
-
     $token = $_POST['csrf_token'] ?? '';
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
         $error = 'Ungültige Anfrage (CSRF).';
     } else {
-        $rawUrl  = trim($_POST['url']  ?? '');
-        $rawSlug = trim($_POST['slug'] ?? '');
+        $action = $_POST['action'] ?? 'create';
 
-        // URL validieren
-        if ($rawUrl === '') {
-            $error = 'Bitte eine Ziel-URL angeben.';
-        } elseif (!filter_var($rawUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $rawUrl)) {
-            $error = 'Bitte eine gültige HTTP/HTTPS-URL eingeben.';
-        } else {
-            // Slug normalisieren
-            if ($rawSlug === '') {
-                $slug = generateSlug();
-                // Kollisionen bei zufälligem Slug vermeiden
-                $existing = loadData();
-                $attempts = 0;
-                while (isset($existing[$slug]) && $attempts++ < 10) {
-                    $slug = generateSlug();
+        if ($action === 'delete') {
+            $slugToDel = preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['slug'] ?? '');
+            if ($slugToDel !== '') {
+                $delError = deleteSlug($slugToDel);
+                if ($delError === null) {
+                    $info = 'Kurzlink „' . htmlspecialchars($slugToDel, ENT_QUOTES, 'UTF-8') . '" wurde gelöscht.';
+                } elseif ($delError !== 'SLUG_NOT_FOUND') {
+                    $error = 'Löschen fehlgeschlagen: ' . $delError;
                 }
-            } else {
-                // Nur alphanumerische Zeichen, Bindestrich und Unterstrich
-                $slug = preg_replace('/[^A-Za-z0-9_-]/', '', $rawSlug);
-                $slug = substr($slug, 0, SLUG_MAX_LEN);
             }
-
-            if ($slug === '') {
-                $error = 'Der Slug enthält keine gültigen Zeichen.';
+        } else {
+            // Link erstellen
+            if (!checkRateLimit()) {
+                $error = 'Zu viele Anfragen. Bitte warte eine Minute.';
             } else {
-                $writeError = saveData($slug, $rawUrl);
+                $rawUrl  = trim($_POST['url']  ?? '');
+                $rawSlug = trim($_POST['slug'] ?? '');
 
-                if ($writeError === 'SLUG_EXISTS') {
-                    $error = 'Dieser Slug ist bereits vergeben. Bitte einen anderen wählen.';
-                } elseif ($writeError !== null) {
-                    $error = 'Speicherfehler: ' . $writeError;
+                if ($rawUrl === '') {
+                    $error = 'Bitte eine Ziel-URL angeben.';
+                } elseif (!filter_var($rawUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $rawUrl)) {
+                    $error = 'Bitte eine gültige HTTP/HTTPS-URL eingeben.';
                 } else {
-                    $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                    $host    = htmlspecialchars($_SERVER['HTTP_HOST'], ENT_QUOTES, 'UTF-8');
-                    $success = $scheme . '://' . $host . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
+                    if ($rawSlug === '') {
+                        $slug     = generateSlug();
+                        $existing = loadData();
+                        $attempts = 0;
+                        while (isset($existing[$slug]) && $attempts++ < 10) {
+                            $slug = generateSlug();
+                        }
+                    } else {
+                        $slug = preg_replace('/[^A-Za-z0-9_-]/', '', $rawSlug);
+                        $slug = substr($slug, 0, SLUG_MAX_LEN);
+                    }
+
+                    if ($slug === '') {
+                        $error = 'Der Slug enthält keine gültigen Zeichen.';
+                    } else {
+                        $writeError = saveData($slug, $rawUrl);
+
+                        if ($writeError === 'SLUG_EXISTS') {
+                            $error = 'Dieser Slug ist bereits vergeben. Bitte einen anderen wählen.';
+                        } elseif ($writeError !== null) {
+                            $error = 'Speicherfehler: ' . $writeError;
+                        } else {
+                            $success = rtrim(BASE_URL, '/') . '/' . htmlspecialchars($slug, ENT_QUOTES, 'UTF-8');
+                        }
+                    }
                 }
             }
         }
     }
-} else {
-    session_start();
 }
 
-// CSRF-Token für diesen Request erzeugen / erneuern
 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-$csrfToken = $_SESSION['csrf_token'];
+$csrfToken  = $_SESSION['csrf_token'];
+$allLinks   = loadData();
 
-// ── Ausgabe ───────────────────────────────────────────────────────────────────
 header('Content-Type: text/html; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
@@ -147,25 +94,26 @@ header('X-Frame-Options: DENY');
             background: #f4f6f9;
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            padding: 1.5rem;
+            justify-content: flex-start;
+            padding: 2rem 1rem;
+            gap: 1.5rem;
         }
 
-        .card {
+        .card, .table-card {
             background: #fff;
             border-radius: 12px;
             box-shadow: 0 4px 24px rgba(0,0,0,.08);
             padding: 2.5rem 2rem;
             width: 100%;
-            max-width: 480px;
         }
 
-        h1 {
-            font-size: 1.5rem;
-            margin-bottom: 1.75rem;
-            color: #1a1a2e;
-        }
+        .card      { max-width: 480px; }
+        .table-card{ max-width: 860px; }
+
+        h1 { font-size: 1.5rem; margin-bottom: 1.75rem; color: #1a1a2e; }
+        h2 { font-size: 1.1rem; margin-bottom: 1.25rem; color: #1a1a2e; }
 
         label {
             display: block;
@@ -188,15 +136,10 @@ header('X-Frame-Options: DENY');
 
         input:focus { border-color: #4f46e5; }
 
-        .hint {
-            font-size: .78rem;
-            color: #6b7280;
-            margin-top: .3rem;
-        }
-
+        .hint { font-size: .78rem; color: #6b7280; margin-top: .3rem; }
         .field { margin-bottom: 1.25rem; }
 
-        button[type="submit"] {
+        button[type="submit"].btn-create {
             width: 100%;
             padding: .75rem;
             background: #4f46e5;
@@ -210,7 +153,7 @@ header('X-Frame-Options: DENY');
             margin-top: .5rem;
         }
 
-        button[type="submit"]:hover { background: #4338ca; }
+        button[type="submit"].btn-create:hover { background: #4338ca; }
 
         .alert {
             padding: .85rem 1rem;
@@ -221,18 +164,74 @@ header('X-Frame-Options: DENY');
 
         .alert-error   { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
         .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+        .alert-warning { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+        .alert-info    { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
 
-        .short-url {
-            font-weight: 700;
-            word-break: break-all;
+        .short-url { font-weight: 700; word-break: break-all; }
+        a { color: #4f46e5; }
+
+        /* Links-Tabelle */
+        .links-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .875rem;
         }
 
-        a { color: #4f46e5; }
+        .links-table th {
+            text-align: left;
+            padding: .6rem .75rem;
+            background: #f4f6f9;
+            border-bottom: 2px solid #e5e7eb;
+            color: #374151;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .links-table td {
+            padding: .55rem .75rem;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: middle;
+        }
+
+        .links-table tr:last-child td { border-bottom: none; }
+
+        .links-table tr:hover td { background: #f9fafb; }
+
+        .col-url {
+            max-width: 320px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .col-hits, .col-date { white-space: nowrap; color: #6b7280; }
+
+        .btn-delete {
+            padding: .3rem .65rem;
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: .8rem;
+            transition: background .15s;
+        }
+
+        .btn-delete:hover { background: #fecaca; }
+
+        .empty-state { text-align: center; color: #9ca3af; padding: 1.5rem 0; }
     </style>
 </head>
 <body>
+
 <main class="card">
     <h1>URL-Shortener</h1>
+
+    <?php if (ADMIN_PASSWORD_HASH === ''): ?>
+        <div class="alert alert-warning" role="alert">
+            Kein Passwortschutz aktiv. <code>ADMIN_PASSWORD_HASH</code> in <code>config.php</code> setzen.
+        </div>
+    <?php endif; ?>
 
     <?php if ($error !== ''): ?>
         <div class="alert alert-error" role="alert">
@@ -247,8 +246,15 @@ header('X-Frame-Options: DENY');
         </div>
     <?php endif; ?>
 
+    <?php if ($info !== ''): ?>
+        <div class="alert alert-info" role="alert">
+            <?= $info ?>
+        </div>
+    <?php endif; ?>
+
     <form method="POST" action="" novalidate>
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="action" value="create">
 
         <div class="field">
             <label for="url">Ziel-URL</label>
@@ -259,7 +265,7 @@ header('X-Frame-Options: DENY');
                 placeholder="https://example.com/langer/pfad"
                 required
                 autocomplete="off"
-                value="<?= isset($_POST['url']) ? htmlspecialchars($_POST['url'], ENT_QUOTES, 'UTF-8') : '' ?>"
+                value="<?= isset($_POST['url']) && ($_POST['action'] ?? '') === 'create' ? htmlspecialchars($_POST['url'], ENT_QUOTES, 'UTF-8') : '' ?>"
             >
         </div>
 
@@ -273,13 +279,60 @@ header('X-Frame-Options: DENY');
                 maxlength="<?= SLUG_MAX_LEN ?>"
                 autocomplete="off"
                 pattern="[A-Za-z0-9_\-]+"
-                value="<?= isset($_POST['slug']) ? htmlspecialchars($_POST['slug'], ENT_QUOTES, 'UTF-8') : '' ?>"
+                value="<?= isset($_POST['slug']) && ($_POST['action'] ?? '') === 'create' ? htmlspecialchars($_POST['slug'], ENT_QUOTES, 'UTF-8') : '' ?>"
             >
             <p class="hint">Erlaubt: Buchstaben, Ziffern, <code>-</code> und <code>_</code>. Leer lassen für automatische Generierung.</p>
         </div>
 
-        <button type="submit">Kurzlink erstellen</button>
+        <button type="submit" class="btn-create">Kurzlink erstellen</button>
     </form>
 </main>
+
+<section class="table-card">
+    <h2>Alle Kurzlinks (<?= count($allLinks) ?>)</h2>
+
+    <?php if (empty($allLinks)): ?>
+        <p class="empty-state">Noch keine Kurzlinks vorhanden.</p>
+    <?php else: ?>
+        <table class="links-table">
+            <thead>
+                <tr>
+                    <th>Slug</th>
+                    <th>Ziel-URL</th>
+                    <th>Klicks</th>
+                    <th>Erstellt</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($allLinks as $s => $entry): ?>
+                    <?php
+                        $safeSlug   = htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+                        $targetUrl  = entryUrl($entry);
+                        $safeTarget = htmlspecialchars($targetUrl, ENT_QUOTES, 'UTF-8');
+                        $shortUrl   = rtrim(BASE_URL, '/') . '/' . $safeSlug;
+                    ?>
+                    <tr>
+                        <td><a href="<?= $shortUrl ?>" rel="noopener" target="_blank"><?= $safeSlug ?></a></td>
+                        <td class="col-url" title="<?= $safeTarget ?>">
+                            <a href="<?= $safeTarget ?>" rel="noopener" target="_blank"><?= $safeTarget ?></a>
+                        </td>
+                        <td class="col-hits"><?= entryHits($entry) ?></td>
+                        <td class="col-date"><?= htmlspecialchars(entryCreated($entry), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td>
+                            <form method="POST" action="" onsubmit="return confirm('Kurzlink «<?= $safeSlug ?>» wirklich löschen?')">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="slug"   value="<?= $safeSlug ?>">
+                                <button type="submit" class="btn-delete">Löschen</button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+</section>
+
 </body>
 </html>
