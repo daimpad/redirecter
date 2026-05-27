@@ -81,7 +81,7 @@ header('Content-Type: text/html; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin');
-header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https: data:; form-action 'self'; frame-ancestors 'none'");
+header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; img-src https: data:; form-action 'self'; frame-ancestors 'none'");
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -89,51 +89,47 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirecter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <style>
-        /* Mozilla Photon Design System — dark theme */
+        /* nozilla CI — neo-brutalist design system */
+        @import url('https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@700&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap');
+
         :root {
-            --bg:         #1B1B1B;
-            --surface:    #2A2A2E;
-            --surface2:   #38383D;
-            --border:     #4A4A4F;
-            --text:       #F9F9FA;
-            --muted:      #B1B1B3;
-            --accent:     #0080FF;
-            --accent-h:   #45A1FF;
-            --mono:       'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-            --green:      #30E60B;
-            --green-bg:   #0D2600;
-            --green-b:    #12BC00;
-            --red:        #FF3750;
-            --red-bg:     #3E0000;
-            --red-b:      #D70022;
-            --orange:     #FF9400;
-            --orange-bg:  #3E1A00;
-            --orange-b:   #C45A27;
-            --blue:       #45A1FF;
-            --blue-bg:    #002050;
-            --blue-b:     #0060DF;
+            --nz-paper:   #FFFEE5;
+            --nz-ink:     #000000;
+            --nz-ink-70:  rgba(0,0,0,.65);
+            --nz-ink-20:  rgba(0,0,0,.18);
+            --nz-signal:  #00FF9C;
+            --nz-error:   #FF5F1F;
+            --nz-good:    #00C075;
+            --nz-shadow:  6px 6px 0 0 #000;
+            --nz-shadow-s:3px 3px 0 0 #000;
+            --nz-border:  2px solid #000;
+            --nz-f-disp:  'Zilla Slab', Georgia, serif;
+            --nz-f-body:  'Inter', system-ui, sans-serif;
+            --nz-f-mono:  'Space Mono', 'Courier New', monospace;
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Ubuntu, sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            font-family: var(--nz-f-body);
+            background: var(--nz-paper);
+            color: var(--nz-ink);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            padding: 2rem 1rem;
-            gap: 1.5rem;
+            padding: 2.5rem 1rem;
+            gap: 2rem;
         }
 
         .card, .table-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 4px;
+            background: var(--nz-paper);
+            border: var(--nz-border);
+            box-shadow: var(--nz-shadow);
             padding: 2rem;
             width: 100%;
         }
@@ -141,94 +137,119 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
         .card      { max-width: 480px; }
         .table-card{ max-width: 860px; }
 
-        h1, h2 {
-            font-weight: 600;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: .65rem;
-            color: var(--text);
+        h1 {
+            font-family: var(--nz-f-disp);
+            font-weight: 700;
+            font-size: 2.25rem;
+            line-height: 1;
+            letter-spacing: -0.02em;
+            margin-bottom: 1.5rem;
+            padding-bottom: .75rem;
+            border-bottom: var(--nz-border);
         }
-        h1 { font-size: 1.1rem; margin-bottom: 1.5rem; }
-        h2 { font-size: .9rem;  margin-bottom: 1.25rem; color: var(--muted); }
+
+        h2 {
+            font-family: var(--nz-f-mono);
+            font-weight: 700;
+            font-size: .7rem;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            margin-bottom: 1.25rem;
+            padding-bottom: .6rem;
+            border-bottom: var(--nz-border);
+            color: var(--nz-ink-70);
+        }
 
         label {
             display: block;
-            font-size: .75rem;
+            font-family: var(--nz-f-mono);
+            font-size: .68rem;
             font-weight: 700;
-            color: var(--muted);
-            letter-spacing: .07em;
+            letter-spacing: .12em;
             text-transform: uppercase;
-            margin-bottom: .35rem;
+            color: var(--nz-ink-70);
+            margin-bottom: .4rem;
         }
 
         input[type="url"],
         input[type="text"] {
             width: 100%;
             padding: .6rem .75rem;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 3px;
+            background: #fff;
+            border: var(--nz-border);
+            border-radius: 0;
             font-size: .9rem;
-            color: var(--text);
-            font-family: var(--mono);
-            transition: border-color .15s, box-shadow .15s;
+            font-family: var(--nz-f-mono);
+            color: var(--nz-ink);
             outline: none;
+            transition: box-shadow .1s;
         }
 
-        input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 1px var(--accent);
+        input:focus { box-shadow: var(--nz-shadow-s); }
+
+        .hint {
+            font-family: var(--nz-f-mono);
+            font-size: .68rem;
+            color: var(--nz-ink-70);
+            margin-top: .4rem;
         }
 
-        .hint { font-size: .75rem; color: var(--muted); margin-top: .35rem; }
         .field { margin-bottom: 1.1rem; }
 
         button[type="submit"].btn-create {
             width: 100%;
-            padding: .65rem;
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            border-radius: 3px;
-            font-size: .8rem;
+            padding: .7rem;
+            background: var(--nz-signal);
+            color: var(--nz-ink);
+            border: var(--nz-border);
+            border-radius: 0;
+            box-shadow: var(--nz-shadow-s);
+            font-family: var(--nz-f-mono);
+            font-size: .75rem;
             font-weight: 700;
-            letter-spacing: .05em;
+            letter-spacing: .1em;
             text-transform: uppercase;
             cursor: pointer;
-            transition: background .15s;
+            transition: box-shadow .1s, transform .1s;
             margin-top: .5rem;
         }
 
-        button[type="submit"].btn-create:hover { background: var(--accent-h); }
+        button[type="submit"].btn-create:hover {
+            box-shadow: var(--nz-shadow);
+            transform: translate(-2px, -2px);
+        }
+
+        button[type="submit"].btn-create:active {
+            box-shadow: none;
+            transform: translate(3px, 3px);
+        }
 
         .alert {
-            padding: .7rem 1rem;
-            border-radius: 3px;
+            padding: .8rem 1rem;
             margin-bottom: 1.1rem;
-            font-size: .85rem;
-            border-left: 3px solid;
+            font-size: .875rem;
+            border: var(--nz-border);
+            box-shadow: var(--nz-shadow-s);
         }
 
-        .alert-error   { background: var(--red-bg);    color: var(--red);    border-color: var(--red-b); }
-        .alert-success { background: var(--green-bg);  color: var(--green);  border-color: var(--green-b); }
-        .alert-warning { background: var(--orange-bg); color: var(--orange); border-color: var(--orange-b); }
-        .alert-info    { background: var(--blue-bg);   color: var(--blue);   border-color: var(--blue-b); }
+        .alert-error   { background: #FFD6C0; }
+        .alert-success { background: #C0FFE0; }
+        .alert-warning { background: #FFF0C0; }
+        .alert-info    { background: #C0E8FF; }
 
         .short-url {
+            font-family: var(--nz-f-mono);
             font-weight: 700;
             word-break: break-all;
-            font-family: var(--mono);
         }
 
-        a { color: var(--accent); text-decoration: none; }
-        a:hover { color: var(--accent-h); text-decoration: underline; }
+        a { color: var(--nz-ink); text-decoration: underline; text-decoration-thickness: 2px; }
+        a:hover { background: var(--nz-signal); text-decoration: none; }
 
         code {
-            font-family: var(--mono);
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 2px;
+            font-family: var(--nz-f-mono);
+            background: rgba(0,0,0,.06);
+            border: 1.5px solid var(--nz-ink-20);
             padding: .1em .3em;
             font-size: .85em;
         }
@@ -242,68 +263,89 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
 
         .links-table th {
             text-align: left;
-            padding: .5rem .75rem;
-            background: var(--bg);
-            border-bottom: 2px solid var(--border);
-            color: var(--muted);
-            font-size: .7rem;
+            padding: .55rem .75rem;
+            background: var(--nz-paper);
+            border-bottom: var(--nz-border);
+            font-family: var(--nz-f-mono);
+            font-size: .65rem;
             font-weight: 700;
-            letter-spacing: .1em;
+            letter-spacing: .12em;
             text-transform: uppercase;
+            color: var(--nz-ink-70);
             white-space: nowrap;
         }
 
         .links-table td {
-            padding: .5rem .75rem;
-            border-bottom: 1px solid var(--surface2);
+            padding: .55rem .75rem;
+            border-bottom: 1.5px solid var(--nz-ink-20);
             vertical-align: middle;
         }
 
         .links-table tr:last-child td { border-bottom: none; }
-        .links-table tr:hover td { background: var(--surface2); }
+
+        .links-table tr:hover td { background: rgba(0,255,156,.2); }
 
         .col-url {
             max-width: 320px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            font-family: var(--mono);
-            font-size: .8rem;
-            color: var(--muted);
+            font-family: var(--nz-f-mono);
+            font-size: .78rem;
+            color: var(--nz-ink-70);
         }
 
         .col-hits {
             white-space: nowrap;
-            color: var(--accent);
+            font-family: var(--nz-f-mono);
+            font-weight: 700;
             font-variant-numeric: tabular-nums;
-            font-weight: 600;
         }
 
-        .col-date { white-space: nowrap; color: var(--muted); font-size: .8rem; }
+        .col-date {
+            white-space: nowrap;
+            font-family: var(--nz-f-mono);
+            font-size: .75rem;
+            color: var(--nz-ink-70);
+        }
 
-        .slug-link { font-family: var(--mono); }
+        .slug-link { font-family: var(--nz-f-mono); font-weight: 700; }
 
         .btn-delete {
-            padding: .25rem .55rem;
+            padding: .28rem .6rem;
             background: transparent;
-            color: var(--red);
-            border: 1px solid var(--red-b);
-            border-radius: 3px;
+            color: var(--nz-error);
+            border: 2px solid var(--nz-error);
+            border-radius: 0;
             cursor: pointer;
-            font-size: .7rem;
+            font-family: var(--nz-f-mono);
+            font-size: .65rem;
             font-weight: 700;
-            letter-spacing: .04em;
+            letter-spacing: .08em;
             text-transform: uppercase;
-            transition: background .15s;
+            transition: background .1s, box-shadow .1s, transform .1s;
         }
 
-        .btn-delete:hover { background: var(--red-bg); }
+        .btn-delete:hover {
+            background: var(--nz-error);
+            color: #fff;
+            box-shadow: 2px 2px 0 0 var(--nz-ink);
+            transform: translate(-1px, -1px);
+        }
+
+        .btn-delete:active {
+            transform: translate(1px, 1px);
+            box-shadow: none;
+        }
 
         .empty-state {
             text-align: center;
-            color: var(--muted);
-            padding: 1.5rem 0;
-            font-size: .875rem;
+            color: var(--nz-ink-70);
+            padding: 2rem 0;
+            font-family: var(--nz-f-mono);
+            font-size: .8rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
         }
     </style>
 </head>
