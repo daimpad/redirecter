@@ -2,9 +2,32 @@
 declare(strict_types=1);
 
 /**
+ * Atomically writes $stored to DATA_FILE via a temp-file rename.
+ * Readers always see either the old or the new complete file — never a partial write.
+ * Clears APCu cache on success.
+ */
+function atomicWriteData(array $stored): bool
+{
+    $json = json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $tmp  = DATA_FILE . '.tmp.' . getmypid();
+    if (file_put_contents($tmp, $json) === false) {
+        return false;
+    }
+    if (!rename($tmp, DATA_FILE)) {
+        @unlink($tmp);
+        return false;
+    }
+    if (function_exists('apcu_delete')) {
+        apcu_delete('shortener_urls');
+    }
+    return true;
+}
+
+/**
  * Lädt alle Slug-Einträge aus DATA_FILE.
  * Nutzt APCu als In-Memory-Cache (60 s TTL), falls verfügbar.
- * Gibt das rohe Array zurück — Werte können string (Legacy) oder array sein.
+ * atomicWriteData() stellt sicher, dass DATA_FILE immer vollständig ist —
+ * kein LOCK_SH nötig.
  */
 function loadData(): array
 {
@@ -20,7 +43,7 @@ function loadData(): array
     }
 
     $raw  = file_get_contents(DATA_FILE);
-    $data = json_decode($raw, true);
+    $data = json_decode($raw !== false ? $raw : '', true);
     $data = is_array($data) ? $data : [];
 
     if (function_exists('apcu_store')) {
@@ -50,14 +73,15 @@ function entryCreated(mixed $entry): string
 
 /**
  * Schreibt einen neuen Slug atomisch in DATA_FILE.
- * Kollisionsprüfung innerhalb des flock-Locks.
+ * Serialisierung über .lock-Datei (stabiles Inode, wird nie umbenannt).
+ * Kollisionsprüfung innerhalb des Locks.
  * Rückgabe: null = Erfolg | 'SLUG_EXISTS' | Fehlermeldung
  */
 function saveData(string $slug, string $url): ?string
 {
-    $fp = fopen(DATA_FILE, 'c+');
+    $fp = fopen(DATA_FILE . '.lock', 'c');
     if ($fp === false) {
-        return 'Datei konnte nicht geöffnet werden.';
+        return 'Lock-Datei konnte nicht geöffnet werden.';
     }
 
     if (!flock($fp, LOCK_EX)) {
@@ -65,8 +89,8 @@ function saveData(string $slug, string $url): ?string
         return 'Datei ist gesperrt – bitte erneut versuchen.';
     }
 
-    fseek($fp, 0);
-    $stored = json_decode(stream_get_contents($fp), true);
+    $raw    = is_file(DATA_FILE) ? file_get_contents(DATA_FILE) : '';
+    $stored = json_decode($raw !== false ? $raw : '', true);
     if (!is_array($stored)) {
         $stored = [];
     }
@@ -78,23 +102,12 @@ function saveData(string $slug, string $url): ?string
     }
 
     $stored[$slug] = ['url' => $url, 'hits' => 0, 'created' => date('Y-m-d')];
+    $ok = atomicWriteData($stored);
 
-    ftruncate($fp, 0);
-    fseek($fp, 0);
-    $written = fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
 
-    if ($written === false) {
-        return 'Schreibfehler.';
-    }
-
-    if (function_exists('apcu_delete')) {
-        apcu_delete('shortener_urls');
-    }
-
-    return null;
+    return $ok ? null : 'Schreibfehler.';
 }
 
 /**
@@ -103,9 +116,9 @@ function saveData(string $slug, string $url): ?string
  */
 function deleteSlug(string $slug): ?string
 {
-    $fp = fopen(DATA_FILE, 'c+');
+    $fp = fopen(DATA_FILE . '.lock', 'c');
     if ($fp === false) {
-        return 'Datei konnte nicht geöffnet werden.';
+        return 'Lock-Datei konnte nicht geöffnet werden.';
     }
 
     if (!flock($fp, LOCK_EX)) {
@@ -113,8 +126,8 @@ function deleteSlug(string $slug): ?string
         return 'Datei ist gesperrt – bitte erneut versuchen.';
     }
 
-    fseek($fp, 0);
-    $stored = json_decode(stream_get_contents($fp), true);
+    $raw    = is_file(DATA_FILE) ? file_get_contents(DATA_FILE) : '';
+    $stored = json_decode($raw !== false ? $raw : '', true);
     if (!is_array($stored)) {
         flock($fp, LOCK_UN);
         fclose($fp);
@@ -128,19 +141,12 @@ function deleteSlug(string $slug): ?string
     }
 
     unset($stored[$slug]);
+    $ok = atomicWriteData($stored);
 
-    ftruncate($fp, 0);
-    fseek($fp, 0);
-    $written = fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
 
-    if (function_exists('apcu_delete')) {
-        apcu_delete('shortener_urls');
-    }
-
-    return $written === false ? 'Schreibfehler.' : null;
+    return $ok ? null : 'Schreibfehler.';
 }
 
 /**
@@ -149,7 +155,7 @@ function deleteSlug(string $slug): ?string
  */
 function incrementHits(string $slug): void
 {
-    $fp = fopen(DATA_FILE, 'c+');
+    $fp = fopen(DATA_FILE . '.lock', 'c');
     if ($fp === false) {
         return;
     }
@@ -159,8 +165,8 @@ function incrementHits(string $slug): void
         return;
     }
 
-    fseek($fp, 0);
-    $stored = json_decode(stream_get_contents($fp), true);
+    $raw    = is_file(DATA_FILE) ? file_get_contents(DATA_FILE) : '';
+    $stored = json_decode($raw !== false ? $raw : '', true);
 
     if (!is_array($stored) || !isset($stored[$slug])) {
         flock($fp, LOCK_UN);
@@ -168,28 +174,22 @@ function incrementHits(string $slug): void
         return;
     }
 
-    // Legacy-String-Format auf neues Format migrieren
     if (!is_array($stored[$slug])) {
         $stored[$slug] = ['url' => $stored[$slug], 'hits' => 0, 'created' => '—'];
     }
 
     $stored[$slug]['hits'] = ($stored[$slug]['hits'] ?? 0) + 1;
 
-    ftruncate($fp, 0);
-    fseek($fp, 0);
-    fwrite($fp, json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    fflush($fp);
+    atomicWriteData($stored);
+
     flock($fp, LOCK_UN);
     fclose($fp);
-
-    if (function_exists('apcu_delete')) {
-        apcu_delete('shortener_urls');
-    }
 }
 
 /**
  * Prüft, ob die aktuelle IP das Rate Limit überschreitet.
- * Nutzt APCu (pro IP) oder Session (Fallback) als Zähler-Speicher.
+ * APCu: atomisches apcu_add + apcu_inc verhindert Race Condition.
+ * Session: Fallback für Server ohne APCu.
  * Gibt false zurück, wenn das Limit erreicht ist.
  */
 function checkRateLimit(): bool
@@ -201,17 +201,10 @@ function checkRateLimit(): bool
     $ip  = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     $key = 'rl_' . md5($ip);
 
-    if (function_exists('apcu_fetch')) {
-        $count = apcu_fetch($key, $exists);
-        if (!$exists) {
-            apcu_store($key, 1, 60);
-            return true;
-        }
-        if ((int)$count >= RATE_LIMIT_MAX) {
-            return false;
-        }
-        apcu_inc($key);
-        return true;
+    if (function_exists('apcu_add')) {
+        apcu_add($key, 0, 60);          // Erstellt Key mit TTL, falls noch nicht vorhanden
+        $count = apcu_inc($key);        // Atomisches Increment
+        return $count !== false && (int)$count <= RATE_LIMIT_MAX;
     }
 
     // Session-Fallback (per Session, nicht per IP)
@@ -229,11 +222,17 @@ function checkRateLimit(): bool
 }
 
 /**
- * Erzeugt einen zufälligen Hex-Slug.
+ * Erzeugt einen zufälligen alphanumerischen Slug (Base62, ~36 Bit Entropie bei 6 Zeichen).
  */
 function generateSlug(): string
 {
-    return substr(bin2hex(random_bytes(RANDOM_SLUG_LEN)), 0, RANDOM_SLUG_LEN);
+    $chars  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    $bytes  = random_bytes(RANDOM_SLUG_LEN);
+    $result = '';
+    for ($i = 0; $i < RANDOM_SLUG_LEN; $i++) {
+        $result .= $chars[ord($bytes[$i]) % 62];
+    }
+    return $result;
 }
 
 /**
@@ -249,7 +248,11 @@ function requireAuth(): void
     $user = $_SERVER['PHP_AUTH_USER'] ?? '';
     $pass = $_SERVER['PHP_AUTH_PW']   ?? '';
 
-    if (!hash_equals(ADMIN_USER, $user) || !password_verify($pass, ADMIN_PASSWORD_HASH)) {
+    // Beide Prüfungen immer ausführen um Timing-Side-Channel zu verhindern
+    $validUser = hash_equals(ADMIN_USER, $user);
+    $validPass = password_verify($pass, ADMIN_PASSWORD_HASH);
+
+    if (!$validUser || !$validPass) {
         header('WWW-Authenticate: Basic realm="URL Shortener Admin"');
         http_response_code(401);
         exit('Zugriff verweigert.');
