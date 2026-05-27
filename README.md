@@ -1,7 +1,8 @@
-# URL-Shortener
+# Redirecter
 
 Schlanker URL-Shortener in Vanilla PHP 8 — ohne Datenbank, ohne Framework.  
-Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugänglichen Bereichs liegt.
+Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugänglichen Bereichs liegt.  
+Admin-Oberfläche im [nozilla CI](https://github.com/daimpad/nozilla-ci) Neo-Brutalist-Design, vollständig mobil optimiert.
 
 ## Voraussetzungen
 
@@ -9,7 +10,7 @@ Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugäng
 |---|---|
 | PHP | 8.0 oder neuer |
 | Webserver | Apache mit `mod_rewrite` |
-| Schreibrechte | `storage/data.json` muss durch den Webserver-Prozess beschreibbar sein |
+| Schreibrechte | `storage/` muss durch den Webserver-Prozess beschreibbar sein |
 
 ## Installation
 
@@ -18,9 +19,10 @@ Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugäng
 git clone https://github.com/daimpad/redirecter.git /var/www/html/shortener
 cd /var/www/html/shortener
 
-# Datenspeicher beschreibbar machen
+# storage-Verzeichnis beschreibbar machen
+chmod 775 storage
 chmod 664 storage/data.json
-chown www-data:www-data storage/data.json
+chown -R www-data:www-data storage
 ```
 
 Stelle sicher, dass `mod_rewrite` aktiviert und `AllowOverride All` für das Verzeichnis gesetzt ist:
@@ -63,12 +65,13 @@ Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erre
 .
 ├── .htaccess          # Apache Rewrite-Regeln + Dateischutz
 ├── config.php         # Zentrale Konfiguration (nicht via HTTP erreichbar)
-├── functions.php      # Geteilte Funktionen: loadData, saveData, deleteSlug, incrementHits, Auth, RateLimit (nicht via HTTP erreichbar)
-├── index.php          # Admin-Formular + Speicher-Logik
+├── functions.php      # Geteilte Funktionen (nicht via HTTP erreichbar)
+├── index.php          # Admin-Formular + Verwaltungslogik
 ├── redirect.php       # Slug → 301-Redirect
 └── storage/
     ├── .htaccess      # Blockiert HTTP-Zugriff auf das Verzeichnis
-    └── data.json      # Datenspeicher (Slug ↔ Ziel-URL)
+    ├── data.json      # Datenspeicher (Slug ↔ Ziel-URL)
+    └── data.json.lock # Exklusive Lock-Datei für atomare Schreibvorgänge
 ```
 
 ## Verwendung
@@ -82,7 +85,7 @@ Rufe `https://deinedomain.de/` auf. Das Formular hat zwei Felder:
 | **Ziel-URL** | Die lange URL, die gekürzt werden soll (Pflichtfeld) |
 | **Wunsch-Slug** | Gewünschtes Kürzel, z. B. `mein-link` (optional) |
 
-Bleibt der Slug leer, wird ein zufälliger 6-stelliger Hex-String generiert.
+Bleibt der Slug leer, wird ein zufälliger 6-stelliger Base62-String generiert (~56 Milliarden mögliche Werte).
 
 ### Kurzlinks verwalten
 
@@ -128,17 +131,19 @@ apt install php-apcu
 | Maßnahme | Details |
 |---|---|
 | **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.php` |
-| **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; APCu wenn verfügbar, Session als Fallback |
-| **CSRF-Schutz** | Session-Token, verglichen mit `hash_equals()` (Timing-safe) |
+| **Timing-sichere Auth** | `hash_equals()` für Benutzername + `password_verify()` immer ausgeführt (kein Short-Circuit, der Username-Enumeration via Timing ermöglicht) |
+| **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; atomares `apcu_add`+`apcu_inc` (kein TOCTOU), Session als Fallback |
+| **CSRF-Schutz** | Session-Token wird vor dem POST-Handler initialisiert; explizite Leer-Prüfung verhindert `hash_equals('','')` Bypass |
+| **Atomare Schreibvorgänge** | Schreiben in Temp-Datei + `rename()` — kein Datenverlust bei Disk-Full, Leser sehen immer eine vollständige Datei |
+| **Lock-Datei** | `data.json.lock` als stabiles Lock-Inode — verhindert Lock-Splitting beim Umbenennen der Datendatei |
 | **Slug-Sanitizing** | Nur `[A-Za-z0-9_-]` erlaubt — Sonderzeichen werden entfernt |
 | **URL-Validierung** | `filter_var(FILTER_VALIDATE_URL)` + Pflicht-Präfix `http://` oder `https://` |
 | **XSS-Schutz** | Alle HTML-Ausgaben über `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')` |
-| **Race Conditions** | Kollisionsprüfung und Schreiben innerhalb `flock(LOCK_EX)` |
 | **data.json-Schutz** | Liegt in `storage/` mit eigenem `.htaccess` (`Require all denied`) |
 | **Config-Schutz** | `config.php` und `functions.php` via `<FilesMatch>` blockiert |
 | **Open Redirect** | Nur gespeicherte, validierte URLs als Redirect-Ziel |
 | **Directory Listing** | `Options -Indexes` in `.htaccess` |
-| **Sichere Header** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` |
+| **Sichere Header** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy` |
 
 ## Einschränkungen
 
