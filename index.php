@@ -7,13 +7,18 @@ require_once __DIR__ . '/functions.php';
 requireAuth();
 if (session_status() === PHP_SESSION_NONE) session_start();
 
+// Initialise CSRF token before any POST handling to prevent hash_equals('', '') bypass
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $error   = '';
 $success = '';
 $info    = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = $_POST['csrf_token'] ?? '';
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+    if ($token === '' || !hash_equals($_SESSION['csrf_token'], $token)) {
         $error = 'Ungültige Anfrage (CSRF).';
     } else {
         $action = $_POST['action'] ?? 'create';
@@ -41,7 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (!filter_var($rawUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $rawUrl)) {
                     $error = 'Bitte eine gültige HTTP/HTTPS-URL eingeben.';
                 } else {
-                    if ($rawSlug === '') {
+                    $autoSlug = ($rawSlug === '');
+
+                    if ($autoSlug) {
                         $slug     = generateSlug();
                         $existing = loadData();
                         $attempts = 0;
@@ -58,13 +65,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $writeError = saveData($slug, $rawUrl);
 
+                        // Auto-generated slug lost a concurrent race — silently retry
+                        $retries = 0;
+                        while ($autoSlug && $writeError === 'SLUG_EXISTS' && $retries++ < 3) {
+                            $slug       = generateSlug();
+                            $writeError = saveData($slug, $rawUrl);
+                        }
+
                         if ($writeError === 'SLUG_EXISTS') {
                             $error = 'Dieser Slug ist bereits vergeben. Bitte einen anderen wählen.';
                         } elseif ($writeError !== null) {
                             $error = 'Speicherfehler: ' . $writeError;
                         } else {
                             $successRaw = rtrim(BASE_URL, '/') . '/' . $slug;
-                        $success    = htmlspecialchars($successRaw, ENT_QUOTES, 'UTF-8');
+                            $success    = htmlspecialchars($successRaw, ENT_QUOTES, 'UTF-8');
                         }
                     }
                 }
