@@ -347,6 +347,29 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline' h
             letter-spacing: .08em;
             text-transform: uppercase;
         }
+
+        .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        @media (max-width: 600px) {
+            body { padding: 1.25rem .75rem; gap: 1.25rem; }
+
+            .card, .table-card { padding: 1.25rem; box-shadow: 4px 4px 0 0 #000; }
+
+            h1 { font-size: 1.6rem; margin-bottom: 1rem; }
+
+            .col-date { display: none; }
+            .links-table th:nth-child(4) { display: none; }
+
+            .col-url { max-width: 160px; }
+
+            .alert { font-size: .8rem; }
+        }
+
+        @media (max-width: 360px) {
+            h1 { font-size: 1.3rem; }
+            .card, .table-card { padding: 1rem; }
+            .col-url { max-width: 110px; }
+        }
     </style>
 </head>
 <body>
@@ -424,7 +447,7 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline' h
     <?php if (empty($allLinks)): ?>
         <p class="empty-state">Noch keine Kurzlinks vorhanden.</p>
     <?php else: ?>
-        <table class="links-table">
+        <div class="table-scroll"><table class="links-table">
             <thead>
                 <tr>
                     <th>Slug</th>
@@ -464,7 +487,7 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline' h
                     </tr>
                 <?php endforeach; ?>
             </tbody>
-        </table>
+        </table></div>
     <?php endif; ?>
 </section>
 
