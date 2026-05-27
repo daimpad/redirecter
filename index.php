@@ -88,13 +88,39 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>URL-Shortener</title>
+    <title>Redirecter</title>
     <style>
+        /* Mozilla Photon Design System — dark theme */
+        :root {
+            --bg:         #1B1B1B;
+            --surface:    #2A2A2E;
+            --surface2:   #38383D;
+            --border:     #4A4A4F;
+            --text:       #F9F9FA;
+            --muted:      #B1B1B3;
+            --accent:     #0080FF;
+            --accent-h:   #45A1FF;
+            --mono:       'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            --green:      #30E60B;
+            --green-bg:   #0D2600;
+            --green-b:    #12BC00;
+            --red:        #FF3750;
+            --red-bg:     #3E0000;
+            --red-b:      #D70022;
+            --orange:     #FF9400;
+            --orange-bg:  #3E1A00;
+            --orange-b:   #C45A27;
+            --blue:       #45A1FF;
+            --blue-bg:    #002050;
+            --blue-b:     #0060DF;
+        }
+
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #f4f6f9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -105,130 +131,186 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
         }
 
         .card, .table-card {
-            background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 4px 24px rgba(0,0,0,.08);
-            padding: 2.5rem 2rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2rem;
             width: 100%;
         }
 
         .card      { max-width: 480px; }
         .table-card{ max-width: 860px; }
 
-        h1 { font-size: 1.5rem; margin-bottom: 1.75rem; color: #1a1a2e; }
-        h2 { font-size: 1.1rem; margin-bottom: 1.25rem; color: #1a1a2e; }
+        h1, h2 {
+            font-weight: 600;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: .65rem;
+            color: var(--text);
+        }
+        h1 { font-size: 1.1rem; margin-bottom: 1.5rem; }
+        h2 { font-size: .9rem;  margin-bottom: 1.25rem; color: var(--muted); }
 
         label {
             display: block;
-            font-size: .875rem;
-            font-weight: 600;
-            color: #374151;
+            font-size: .75rem;
+            font-weight: 700;
+            color: var(--muted);
+            letter-spacing: .07em;
+            text-transform: uppercase;
             margin-bottom: .35rem;
         }
 
         input[type="url"],
         input[type="text"] {
             width: 100%;
-            padding: .65rem .85rem;
-            border: 1.5px solid #d1d5db;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color .2s;
+            padding: .6rem .75rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            font-size: .9rem;
+            color: var(--text);
+            font-family: var(--mono);
+            transition: border-color .15s, box-shadow .15s;
             outline: none;
         }
 
-        input:focus { border-color: #4f46e5; }
+        input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
 
-        .hint { font-size: .78rem; color: #6b7280; margin-top: .3rem; }
-        .field { margin-bottom: 1.25rem; }
+        .hint { font-size: .75rem; color: var(--muted); margin-top: .35rem; }
+        .field { margin-bottom: 1.1rem; }
 
         button[type="submit"].btn-create {
             width: 100%;
-            padding: .75rem;
-            background: #4f46e5;
+            padding: .65rem;
+            background: var(--accent);
             color: #fff;
             border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
+            border-radius: 3px;
+            font-size: .8rem;
+            font-weight: 700;
+            letter-spacing: .05em;
+            text-transform: uppercase;
             cursor: pointer;
-            transition: background .2s;
+            transition: background .15s;
             margin-top: .5rem;
         }
 
-        button[type="submit"].btn-create:hover { background: #4338ca; }
+        button[type="submit"].btn-create:hover { background: var(--accent-h); }
 
         .alert {
-            padding: .85rem 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.25rem;
-            font-size: .9rem;
+            padding: .7rem 1rem;
+            border-radius: 3px;
+            margin-bottom: 1.1rem;
+            font-size: .85rem;
+            border-left: 3px solid;
         }
 
-        .alert-error   { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
-        .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
-        .alert-warning { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
-        .alert-info    { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
+        .alert-error   { background: var(--red-bg);    color: var(--red);    border-color: var(--red-b); }
+        .alert-success { background: var(--green-bg);  color: var(--green);  border-color: var(--green-b); }
+        .alert-warning { background: var(--orange-bg); color: var(--orange); border-color: var(--orange-b); }
+        .alert-info    { background: var(--blue-bg);   color: var(--blue);   border-color: var(--blue-b); }
 
-        .short-url { font-weight: 700; word-break: break-all; }
-        a { color: #4f46e5; }
+        .short-url {
+            font-weight: 700;
+            word-break: break-all;
+            font-family: var(--mono);
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { color: var(--accent-h); text-decoration: underline; }
+
+        code {
+            font-family: var(--mono);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            padding: .1em .3em;
+            font-size: .85em;
+        }
 
         /* Links-Tabelle */
         .links-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: .875rem;
+            font-size: .85rem;
         }
 
         .links-table th {
             text-align: left;
-            padding: .6rem .75rem;
-            background: #f4f6f9;
-            border-bottom: 2px solid #e5e7eb;
-            color: #374151;
-            font-weight: 600;
+            padding: .5rem .75rem;
+            background: var(--bg);
+            border-bottom: 2px solid var(--border);
+            color: var(--muted);
+            font-size: .7rem;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
             white-space: nowrap;
         }
 
         .links-table td {
-            padding: .55rem .75rem;
-            border-bottom: 1px solid #e5e7eb;
+            padding: .5rem .75rem;
+            border-bottom: 1px solid var(--surface2);
             vertical-align: middle;
         }
 
         .links-table tr:last-child td { border-bottom: none; }
-
-        .links-table tr:hover td { background: #f9fafb; }
+        .links-table tr:hover td { background: var(--surface2); }
 
         .col-url {
             max-width: 320px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            font-family: var(--mono);
+            font-size: .8rem;
+            color: var(--muted);
         }
 
-        .col-hits, .col-date { white-space: nowrap; color: #6b7280; }
+        .col-hits {
+            white-space: nowrap;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+
+        .col-date { white-space: nowrap; color: var(--muted); font-size: .8rem; }
+
+        .slug-link { font-family: var(--mono); }
 
         .btn-delete {
-            padding: .3rem .65rem;
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fca5a5;
-            border-radius: 6px;
+            padding: .25rem .55rem;
+            background: transparent;
+            color: var(--red);
+            border: 1px solid var(--red-b);
+            border-radius: 3px;
             cursor: pointer;
-            font-size: .8rem;
+            font-size: .7rem;
+            font-weight: 700;
+            letter-spacing: .04em;
+            text-transform: uppercase;
             transition: background .15s;
         }
 
-        .btn-delete:hover { background: #fecaca; }
+        .btn-delete:hover { background: var(--red-bg); }
 
-        .empty-state { text-align: center; color: #9ca3af; padding: 1.5rem 0; }
+        .empty-state {
+            text-align: center;
+            color: var(--muted);
+            padding: 1.5rem 0;
+            font-size: .875rem;
+        }
     </style>
 </head>
 <body>
 
 <main class="card">
-    <h1>URL-Shortener</h1>
+    <h1>Redirecter</h1>
 
     <?php if (ADMIN_PASSWORD_HASH === ''): ?>
         <div class="alert alert-warning" role="alert">
@@ -319,7 +401,7 @@ header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; 
                         $shortUrl   = htmlspecialchars(rtrim(BASE_URL, '/'), ENT_QUOTES, 'UTF-8') . '/' . $safeSlug;
                     ?>
                     <tr>
-                        <td><a href="<?= $shortUrl ?>" rel="noopener" target="_blank"><?= $safeSlug ?></a></td>
+                        <td><a class="slug-link" href="<?= $shortUrl ?>" rel="noopener" target="_blank"><?= $safeSlug ?></a></td>
                         <td class="col-url" title="<?= $safeTarget ?>">
                             <?php if (preg_match('/^https?:\/\//i', $targetUrl)): ?>
                                 <a href="<?= $safeTarget ?>" rel="noopener noreferrer" target="_blank"><?= $safeTarget ?></a>
