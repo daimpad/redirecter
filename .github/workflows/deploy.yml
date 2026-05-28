@@ -32,10 +32,6 @@ jobs:
         with:
           name: github-pages
         continue-on-error: true
-      - name: Clean up old artifacts
-        uses: geekyeggo/delete-artifact@v2
-        with:
-          name: github-pages
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
