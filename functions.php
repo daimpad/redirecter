@@ -9,6 +9,9 @@ declare(strict_types=1);
 function atomicWriteData(array $stored): bool
 {
     $json = json_encode($stored, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return false;
+    }
     $tmp  = DATA_FILE . '.tmp.' . getmypid();
     if (file_put_contents($tmp, $json) === false) {
         return false;
@@ -227,10 +230,9 @@ function checkRateLimit(): bool
 function generateSlug(): string
 {
     $chars  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    $bytes  = random_bytes(RANDOM_SLUG_LEN);
     $result = '';
     for ($i = 0; $i < RANDOM_SLUG_LEN; $i++) {
-        $result .= $chars[ord($bytes[$i]) % 62];
+        $result .= $chars[random_int(0, 61)];
     }
     return $result;
 }
