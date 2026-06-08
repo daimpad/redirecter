@@ -12,7 +12,9 @@
         :root {
             --nz-paper:  #FFFEE5;
             --nz-ink:    #000000;
+            --nz-signal: #00FF9C;
             --nz-border: 2px solid #000;
+            --nz-shadow: 4px 4px 0 #000;
             --nz-f-disp: 'Zilla Slab', Georgia, serif;
             --nz-f-mono: 'Space Mono', 'Courier New', monospace;
         }
@@ -38,9 +40,10 @@
             justify-content: center;
             padding: 2rem;
             text-align: center;
+            gap: 2rem;
         }
 
-        h1 {
+        .hero h1 {
             font-family: var(--nz-f-disp);
             font-size: clamp(4rem, 14vw, 9rem);
             font-weight: 700;
@@ -55,6 +58,67 @@
             margin-top: 1.25rem;
             opacity: .6;
         }
+
+        .card {
+            width: 100%;
+            max-width: 480px;
+            border: var(--nz-border);
+            box-shadow: var(--nz-shadow);
+            padding: 1.5rem;
+            text-align: left;
+        }
+
+        .field + .field { margin-top: 1rem; }
+
+        label {
+            display: block;
+            font-size: .75rem;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            margin-bottom: .4rem;
+        }
+
+        input[type="url"],
+        input[type="text"] {
+            width: 100%;
+            padding: .6rem .75rem;
+            border: var(--nz-border);
+            background: var(--nz-paper);
+            font-family: var(--nz-f-mono);
+            font-size: .9rem;
+            outline: none;
+            transition: box-shadow .1s;
+            border-radius: 0;
+            -webkit-appearance: none;
+        }
+
+        input[type="url"]:focus,
+        input[type="text"]:focus {
+            box-shadow: var(--nz-shadow);
+        }
+
+        .btn {
+            display: inline-block;
+            margin-top: 1.25rem;
+            padding: .65rem 1.5rem;
+            border: var(--nz-border);
+            background: var(--nz-signal);
+            color: var(--nz-ink);
+            font-family: var(--nz-f-mono);
+            font-size: .85rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: var(--nz-shadow);
+            transition: box-shadow .1s, transform .1s;
+            width: 100%;
+            border-radius: 0;
+        }
+
+        .btn:hover  { box-shadow: 6px 6px 0 #000; }
+        .btn:active { box-shadow: 2px 2px 0 #000; transform: translate(2px, 2px); }
 
         footer {
             padding: 1.5rem;
@@ -78,8 +142,22 @@
 <body>
 
 <main>
-    <h1>Redirecter</h1>
-    <p class="sub">Weiterleitungen erstellen</p>
+    <div class="hero">
+        <h1>Redirecter</h1>
+        <p class="sub">Weiterleitungen erstellen</p>
+    </div>
+
+    <div class="card">
+        <div class="field">
+            <label for="url">Ziel-URL</label>
+            <input type="url" id="url" placeholder="https://beispiel.de/langer-link">
+        </div>
+        <div class="field">
+            <label for="slug">Wunsch-Slug <span style="opacity:.5;font-weight:400">(optional)</span></label>
+            <input type="text" id="slug" placeholder="mein-link">
+        </div>
+        <button class="btn" type="button">Kurzlink erstellen</button>
+    </div>
 </main>
 
 <footer>
