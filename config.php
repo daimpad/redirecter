@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // Base-URL der Installation — kein abschließender Slash
-const BASE_URL = 'https://deinedomain.de';
+const BASE_URL = 'https://redirecter.nozilla.net';
 
 // Pfad zur JSON-Datendatei
 const DATA_FILE = __DIR__ . '/storage/data.json';
