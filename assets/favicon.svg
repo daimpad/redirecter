@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="nozilla">
+  <!-- Sharp corners, hard offset shadow, signal-green field, ink 'n' + green period.
+       Font-independent geometry so it stays crisp at 16px. -->
+  <rect x="6" y="6" width="52" height="52" fill="#00FF9C"/>
+  <rect x="6" y="6" width="52" height="52" fill="none" stroke="#000000" stroke-width="4"/>
+  <!-- lowercase 'n' as blocky slab strokes -->
+  <rect x="18" y="20" width="8" height="26" fill="#000000"/>
+  <rect x="18" y="20" width="24" height="8" fill="#000000"/>
+  <rect x="34" y="20" width="8" height="26" fill="#000000"/>
+  <!-- signature green period, offset like a hard shadow -->
+  <rect x="44" y="40" width="6" height="6" fill="#000000"/>
+</svg>

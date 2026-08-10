@@ -29,5 +29,9 @@ if (!filter_var($target, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', 
 incrementHits($slug);
 
 header('Referrer-Policy: no-referrer');
-header('Location: ' . $target, true, 301);
+// 302 statt 301: Browser cachen 301 praktisch dauerhaft — der Klick-Zähler
+// würde ab dem zweiten Besuch desselben Browsers nicht mehr hochlaufen und
+// ein geändertes Ziel käme bei Wiederkehrern nie an.
+header('Cache-Control: no-store');
+header('Location: ' . $target, true, 302);
 exit();

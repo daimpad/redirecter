@@ -54,9 +54,39 @@ jobs:
             index.php \
             redirect.php \
             storage/.htaccess \
-            storage/data.json
+            storage/data.json \
+            assets/app.js \
+            assets/favicon.svg \
+            assets/fonts/ZillaSlab-Bold.woff2 \
+            assets/fonts/Inter-Regular.woff2 \
+            assets/fonts/SpaceMono-Regular.woff2 \
+            assets/fonts/SpaceMono-Bold.woff2 \
+            assets/fonts/OFL.txt
           do
             [ -f "$f" ] || { echo "✗ fehlt: $f"; missing=$((missing+1)); }
           done
           [ "$missing" -eq 0 ] || exit 1
           echo "✓ Alle Pflichtdateien vorhanden"
+
+      # Ein Verweis auf fonts.googleapis.com o. ä. würde das CI brechen
+      # ("selbst-gehostet, keine CDN-Abhängigkeit") und wäre ein Datenabfluss.
+      - name: Kein Dritt-CDN für Schriften
+        run: |
+          set -e
+          if grep -rn -E 'fonts\.(googleapis|gstatic)\.com' --include='*.php' --include='*.html' .; then
+            echo "✗ Schrift wird von einem Dritt-CDN geladen — nach assets/fonts/ holen"
+            exit 1
+          fi
+          echo "✓ Schriften ausschließlich selbst gehostet"
+
+      - name: Auth ist fail-closed
+        run: |
+          set -e
+          php -r '
+            $_SERVER["REMOTE_ADDR"] = "203.0.113.7";
+            require "config.php"; require "functions.php";
+            requireAuth();
+            fwrite(STDERR, "✗ requireAuth() lässt ohne Hash eine Fremd-IP durch\n");
+            exit(1);
+          ' > /dev/null
+          echo "✓ Ohne ADMIN_PASSWORD_HASH bleibt der Zugang von außen gesperrt"

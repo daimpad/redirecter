@@ -6,6 +6,9 @@ Schlanker URL-Shortener in Vanilla PHP 8 — ohne Datenbank, ohne Framework.
 Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugänglichen Bereichs liegt.  
 Admin-Oberfläche im [nozilla CI](https://github.com/daimpad/nozilla-ci) Neo-Brutalist-Design, vollständig mobil optimiert.
 
+Die Schriften (Zilla Slab · Inter · Space Mono, alle SIL OFL) liegen subgesetzt
+als WOFF2 in `assets/fonts/` — zusammen 32 KB, kein Dritt-CDN.
+
 ## Voraussetzungen
 
 | | |
@@ -48,10 +51,10 @@ const RATE_LIMIT_MAX = 10;
 
 // Admin-Zugangsdaten
 const ADMIN_USER          = 'admin';
-const ADMIN_PASSWORD_HASH = ''; // leer = Auth deaktiviert
+const ADMIN_PASSWORD_HASH = ''; // leer = nur über localhost erreichbar
 ```
 
-### Passwortschutz aktivieren
+### Passwortschutz aktivieren — Pflicht vor dem Deployment
 
 ```bash
 # Hash erzeugen und in config.php eintragen
@@ -61,6 +64,12 @@ php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"
 Den ausgegebenen Hash in `config.php` bei `ADMIN_PASSWORD_HASH` eintragen.  
 Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erreichbar.
 
+Ohne Hash antwortet das Formular über eine Netzwerkadresse mit **HTTP 503** und
+einem Setup-Hinweis. Das ist Absicht: eine ungeschützte Installation wäre ein
+offenes Relay, über das Fremde beliebige Weiterleitungen auf der eigenen Domain
+anlegen könnten. Über `127.0.0.1` bzw. `::1` bleibt das Formular ohne Hash
+erreichbar, damit lokale Entwicklung ohne Setup funktioniert.
+
 ## Dateistruktur
 
 ```
@@ -69,7 +78,11 @@ Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erre
 ├── config.php         # Zentrale Konfiguration (nicht via HTTP erreichbar)
 ├── functions.php      # Geteilte Funktionen (nicht via HTTP erreichbar)
 ├── index.php          # Admin-Formular + Verwaltungslogik
-├── redirect.php       # Slug → 301-Redirect
+├── redirect.php       # Slug → 302-Redirect
+├── assets/
+│   ├── app.js         # Kopier-Button + QR-Code (optional, progressiv)
+│   ├── favicon.svg    # nozilla CI (+ favicon-32.png / favicon-180.png)
+│   └── fonts/         # Zilla Slab · Inter · Space Mono, subgesetzt als WOFF2
 └── storage/
     ├── .htaccess      # Blockiert HTTP-Zugriff auf das Verzeichnis
     ├── data.json      # Datenspeicher (Slug ↔ Ziel-URL)
@@ -100,7 +113,11 @@ Legacy-Einträge im alten String-Format werden beim ersten Aufruf automatisch mi
 https://deinedomain.de/mein-link
 ```
 
-Der Server antwortet mit einem **HTTP 301**-Redirect zur hinterlegten Ziel-URL.
+Der Server antwortet mit einem **HTTP 302**-Redirect zur hinterlegten Ziel-URL.
+
+Bewusst 302 statt 301: Browser cachen einen 301 praktisch dauerhaft. Der
+Klick-Zähler würde ab dem zweiten Besuch desselben Browsers nicht mehr
+hochlaufen, und ein geändertes Ziel käme bei Wiederkehrern nie an.
 
 ### data.json — Format
 
@@ -134,6 +151,9 @@ apt install php-apcu
 | Maßnahme | Details |
 |---|---|
 | **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.php` |
+| **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — Ausnahme nur über Loopback |
+| **Post/Redirect/Get** | Erfolg und Fehler laufen über einen 303-Redirect; ein Reload sendet nichts erneut ab |
+| **Kein Dritt-CDN** | Schriften selbst gehostet, CSP ohne externe Hosts (`default-src 'none'`); der QR-Dienst wird erst auf Klick kontaktiert |
 | **Timing-sichere Auth** | `hash_equals()` für Benutzername + `password_verify()` immer ausgeführt (kein Short-Circuit, der Username-Enumeration via Timing ermöglicht) |
 | **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; atomares `apcu_add`+`apcu_inc` (kein TOCTOU), Session als Fallback |
 | **CSRF-Schutz** | Session-Token wird vor dem POST-Handler initialisiert; explizite Leer-Prüfung verhindert `hash_equals('','')` Bypass |
