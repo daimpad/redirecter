@@ -1,5 +1,7 @@
 # Redirecter
 
+[![CI](https://github.com/daimpad/redirecter/actions/workflows/ci.yml/badge.svg)](https://github.com/daimpad/redirecter/actions/workflows/ci.yml)
+
 Schlanker URL-Shortener in Vanilla PHP 8 — ohne Datenbank, ohne Framework.  
 Datenspeicher ist eine lokale JSON-Datei, die außerhalb des öffentlich zugänglichen Bereichs liegt.  
 Admin-Oberfläche im [nozilla CI](https://github.com/daimpad/nozilla-ci) Neo-Brutalist-Design, vollständig mobil optimiert.
@@ -89,7 +91,8 @@ Bleibt der Slug leer, wird ein zufälliger 6-stelliger Base62-String generiert (
 
 ### Kurzlinks verwalten
 
-Unterhalb des Formulars zeigt die Admin-Seite alle gespeicherten Links mit Slug, Ziel-URL, Klick-Zähler und Erstelldatum. Jeder Link kann per Klick auf „Löschen" entfernt werden (mit Bestätigungsdialog).
+Gespeicherte Links können direkt in `storage/data.json` bearbeitet oder gelöscht werden.  
+Legacy-Einträge im alten String-Format werden beim ersten Aufruf automatisch migriert.
 
 ### Kurzlink aufrufen
 
@@ -144,6 +147,28 @@ apt install php-apcu
 | **Open Redirect** | Nur gespeicherte, validierte URLs als Redirect-Ziel |
 | **Directory Listing** | `Options -Indexes` in `.htaccess` |
 | **Sichere Header** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy` |
+
+## CI
+
+Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
+
+| Schritt | Was wird geprüft |
+|---|---|
+| **PHP-Syntax** | `php -l` für alle `*.php`-Dateien |
+| **data.json** | Datei muss gültiges JSON sein |
+| **.htaccess** | `RewriteEngine`, `Options -Indexes` und Datei-Schutz vorhanden |
+| **storage/.htaccess** | `Require all denied` — kein HTTP-Direktzugriff auf Datenspeicher |
+| **Pflichtdateien** | Alle sieben Kerndateien müssen committed sein |
+
+Lokal testen:
+
+```bash
+# PHP-Syntax aller Dateien prüfen
+for f in *.php; do php -l "$f"; done
+
+# JSON validieren
+python3 -c "import json; json.load(open('storage/data.json'))"
+```
 
 ## Einschränkungen
 
