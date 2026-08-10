@@ -62,6 +62,18 @@ function entryUrl(mixed $entry): string
     return is_array($entry) ? (string)($entry['url'] ?? '') : (string)$entry;
 }
 
+/** Gibt den Klick-Zähler eines Eintrags zurück. */
+function entryHits(mixed $entry): int
+{
+    return is_array($entry) ? (int)($entry['hits'] ?? 0) : 0;
+}
+
+/** Gibt das Erstelldatum eines Eintrags zurück. */
+function entryCreated(mixed $entry): string
+{
+    return is_array($entry) ? (string)($entry['created'] ?? '—') : '—';
+}
+
 /**
  * Schreibt einen neuen Slug atomisch in DATA_FILE.
  * Serialisierung über .lock-Datei (stabiles Inode, wird nie umbenannt).
@@ -93,6 +105,46 @@ function saveData(string $slug, string $url): ?string
     }
 
     $stored[$slug] = ['url' => $url, 'hits' => 0, 'created' => date('Y-m-d')];
+    $ok = atomicWriteData($stored);
+
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    return $ok ? null : 'Schreibfehler.';
+}
+
+/**
+ * Löscht einen Slug aus DATA_FILE.
+ * Serialisierung wie bei saveData() über die .lock-Datei.
+ * Rückgabe: null = Erfolg | 'SLUG_NOT_FOUND' | Fehlermeldung
+ */
+function deleteSlug(string $slug): ?string
+{
+    $fp = fopen(DATA_FILE . '.lock', 'c');
+    if ($fp === false) {
+        return 'Lock-Datei konnte nicht geöffnet werden.';
+    }
+
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return 'Datei ist gesperrt – bitte erneut versuchen.';
+    }
+
+    $raw    = is_file(DATA_FILE) ? file_get_contents(DATA_FILE) : '';
+    $stored = json_decode($raw !== false ? $raw : '', true);
+    if (!is_array($stored)) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return 'Datenspeicher beschädigt.';
+    }
+
+    if (!isset($stored[$slug])) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return 'SLUG_NOT_FOUND';
+    }
+
+    unset($stored[$slug]);
     $ok = atomicWriteData($stored);
 
     flock($fp, LOCK_UN);

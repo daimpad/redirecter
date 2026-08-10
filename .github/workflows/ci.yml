@@ -55,7 +55,9 @@ jobs:
             redirect.php \
             storage/.htaccess \
             storage/data.json \
+            verwalten.php \
             assets/app.js \
+            assets/style.css \
             assets/favicon.svg \
             assets/fonts/ZillaSlab-Bold.woff2 \
             assets/fonts/Inter-Regular.woff2 \
@@ -78,6 +80,17 @@ jobs:
             exit 1
           fi
           echo "✓ Schriften ausschließlich selbst gehostet"
+
+      # Die CSP erlaubt kein 'unsafe-inline' mehr — ein style-Attribut würde
+      # vom Browser still verworfen und das Layout kaputtmachen.
+      - name: Keine inline-style-Attribute
+        run: |
+          set -e
+          if grep -rn 'style="' --include='*.php' --include='*.html' .; then
+            echo "✗ inline style gefunden — die CSP (style-src 'self') blockiert es; als Klasse nach assets/style.css"
+            exit 1
+          fi
+          echo "✓ keine inline-style-Attribute"
 
       - name: Auth ist fail-closed
         run: |

@@ -1,0 +1,415 @@
+/* nozilla CI — geteilt von index.php und verwalten.php.
+   Schriften selbst gehostet, kein Dritt-CDN. */
+
+@font-face {
+    font-family: 'Zilla Slab'; font-style: normal; font-weight: 700; font-display: swap;
+    src: url('fonts/ZillaSlab-Bold.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap;
+    src: url('fonts/Inter-Regular.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Space Mono'; font-style: normal; font-weight: 400; font-display: swap;
+    src: url('fonts/SpaceMono-Regular.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Space Mono'; font-style: normal; font-weight: 700; font-display: swap;
+    src: url('fonts/SpaceMono-Bold.woff2') format('woff2');
+}
+
+:root {
+    --nz-signal:        #00FF9C;
+    --nz-signal-strong: #00E88D;
+    --nz-danger:        #E5484D;
+    --nz-ink:           #000000;
+    --nz-ink-70:        rgba(0, 0, 0, .72);
+    --nz-ink-20:        rgba(0, 0, 0, .18);
+    --nz-bg:            #FFFFFF;
+
+    --nz-f-display: 'Zilla Slab', Georgia, serif;
+    --nz-f-body:    'Inter', system-ui, sans-serif;
+    --nz-f-mono:    'Space Mono', 'Courier New', monospace;
+
+    --nz-stroke-hair: 1.5px;
+    --nz-stroke-rule: 2px;
+    --nz-shadow-sm: 3px 3px 0 0 var(--nz-ink);
+    --nz-shadow-md: 6px 6px 0 0 var(--nz-ink);
+
+    --nz-dur:  160ms;
+    --nz-ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Für Screenreader da, visuell nicht */
+.visually-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+body {
+    font-family: var(--nz-f-body);
+    background: var(--nz-bg);
+    color: var(--nz-ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Kopf */
+header {
+    width: 100%;
+    background: var(--nz-ink);
+    color: var(--nz-bg);
+    padding: 1.25rem 1.5rem;
+    text-align: center;
+}
+
+header h1 {
+    font-family: var(--nz-f-display);
+    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -.02em;
+}
+
+main {
+    flex: 1;
+    width: 100%;
+    max-width: 480px;
+    padding: 2.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Die Verwaltung braucht Platz für die Tabelle */
+main.wide { max-width: 900px; justify-content: flex-start; }
+
+.card {
+    background: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    box-shadow: var(--nz-shadow-md);
+    padding: 2rem;
+}
+
+/* Formular */
+label, .label {
+    display: block;
+    font-family: var(--nz-f-mono);
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--nz-ink-70);
+    margin-bottom: .45rem;
+}
+
+label .opt { font-weight: 400; letter-spacing: .06em; }
+
+input[type="url"],
+input[type="text"] {
+    width: 100%;
+    padding: .6rem .75rem;
+    background: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    /* 1rem, sonst zoomt iOS Safari beim Antippen in die Seite hinein */
+    font-size: 1rem;
+    font-family: var(--nz-f-mono);
+    color: var(--nz-ink);
+    outline: none;
+    transition: box-shadow var(--nz-dur) var(--nz-ease);
+    -webkit-appearance: none;
+}
+
+input:focus-visible { box-shadow: var(--nz-shadow-sm); }
+
+.hint {
+    font-family: var(--nz-f-mono);
+    font-size: .7rem;
+    line-height: 1.5;
+    color: var(--nz-ink-70);
+    margin-top: .45rem;
+}
+
+.field + .field { margin-top: 1.1rem; }
+
+.btn {
+    display: block;
+    width: 100%;
+    padding: .75rem;
+    background: var(--nz-signal);
+    color: var(--nz-ink);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    box-shadow: var(--nz-shadow-sm);
+    font-family: var(--nz-f-mono);
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: box-shadow var(--nz-dur) var(--nz-ease),
+                transform  var(--nz-dur) var(--nz-ease);
+    margin-top: 1.5rem;
+}
+
+.btn:hover  { background: var(--nz-signal-strong); box-shadow: var(--nz-shadow-md); transform: translate(-2px, -2px); }
+.btn:active { box-shadow: none; transform: translate(3px, 3px); }
+
+/* Tastatur-Fokus muss überall sichtbar sein */
+.btn:focus-visible,
+.copy:focus-visible,
+.btn-del:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+    outline: 3px solid var(--nz-ink);
+    outline-offset: 3px;
+}
+
+.domain {
+    margin-top: 1rem;
+    text-align: center;
+    font-family: var(--nz-f-mono);
+    font-size: .72rem;
+    color: var(--nz-ink-70);
+}
+
+/* Meldungen */
+.alert {
+    padding: .9rem 1rem;
+    margin-bottom: 1.25rem;
+    font-size: .9rem;
+    line-height: 1.5;
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    box-shadow: var(--nz-shadow-sm);
+}
+
+.alert-error   { background: #FFD6C0; }
+.alert-success { background: #C0FFE0; }
+.alert-info    { background: #C0E8FF; }
+
+.result {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-top: .6rem;
+}
+
+.result a {
+    flex: 1;
+    font-family: var(--nz-f-mono);
+    font-weight: 700;
+    font-size: .85rem;
+    /* anywhere statt break-all: bricht an Trennstellen, nicht mitten im Wort */
+    overflow-wrap: anywhere;
+    color: var(--nz-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+}
+
+.copy {
+    flex: none;
+    padding: .4rem .7rem;
+    background: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    font-family: var(--nz-f-mono);
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background var(--nz-dur) var(--nz-ease);
+}
+
+.copy:hover      { background: var(--nz-signal); }
+.copy[data-done] { background: var(--nz-signal); }
+
+/* QR lädt erst auf Klick — sonst erführe api.qrserver.com jeden Kurzlink */
+.qr { margin-top: .9rem; }
+
+.qr summary {
+    font-family: var(--nz-f-mono);
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    color: var(--nz-ink-70);
+}
+
+.qr img      { display: block; margin-top: .7rem; border: var(--nz-stroke-rule) solid var(--nz-ink); }
+.qr .fallback { margin-top: .7rem; font-family: var(--nz-f-mono); font-size: .68rem; color: var(--nz-ink-70); }
+
+code {
+    font-family: var(--nz-f-mono);
+    background: rgba(0, 0, 0, .06);
+    border: var(--nz-stroke-hair) solid var(--nz-ink-20);
+    padding: .1em .35em;
+    font-size: .85em;
+}
+
+/* Verwaltung */
+.card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: .7rem;
+    border-bottom: var(--nz-stroke-rule) solid var(--nz-ink);
+}
+
+.card-head h2 {
+    font-family: var(--nz-f-mono);
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--nz-ink-70);
+}
+
+.card-head .count {
+    font-family: var(--nz-f-mono);
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    color: var(--nz-ink-70);
+}
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.links {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .85rem;
+}
+
+.links th {
+    text-align: left;
+    padding: .5rem .7rem;
+    border-bottom: var(--nz-stroke-rule) solid var(--nz-ink);
+    font-family: var(--nz-f-mono);
+    font-size: .64rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--nz-ink-70);
+    white-space: nowrap;
+}
+
+.links td {
+    padding: .55rem .7rem;
+    border-bottom: var(--nz-stroke-hair) solid var(--nz-ink-20);
+    vertical-align: middle;
+}
+
+.links tr:last-child td { border-bottom: none; }
+.links tbody tr:hover td { background: rgba(0, 255, 156, .18); }
+
+.links a { color: var(--nz-ink); text-decoration: underline; text-decoration-thickness: 2px; }
+.links a:hover { background: var(--nz-signal); text-decoration: none; }
+
+.col-slug   { font-family: var(--nz-f-mono); font-weight: 700; white-space: nowrap; }
+.col-target { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              font-family: var(--nz-f-mono); font-size: .78rem; color: var(--nz-ink-70); }
+.col-hits   { font-family: var(--nz-f-mono); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.col-date   { font-family: var(--nz-f-mono); font-size: .75rem; color: var(--nz-ink-70); white-space: nowrap; }
+.col-act    { text-align: right; white-space: nowrap; }
+
+.btn-del {
+    padding: .3rem .6rem;
+    background: transparent;
+    color: var(--nz-danger);
+    border: var(--nz-stroke-rule) solid var(--nz-danger);
+    border-radius: 0;
+    cursor: pointer;
+    font-family: var(--nz-f-mono);
+    font-size: .64rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    transition: background var(--nz-dur) var(--nz-ease),
+                color      var(--nz-dur) var(--nz-ease),
+                box-shadow var(--nz-dur) var(--nz-ease),
+                transform  var(--nz-dur) var(--nz-ease);
+}
+
+.btn-del:hover  { background: var(--nz-danger); color: #fff; box-shadow: 2px 2px 0 0 var(--nz-ink); transform: translate(-1px, -1px); }
+.btn-del:active { box-shadow: none; transform: translate(1px, 1px); }
+
+.empty {
+    text-align: center;
+    padding: 2.5rem 0;
+    font-family: var(--nz-f-mono);
+    font-size: .78rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--nz-ink-70);
+}
+
+/* Wechsel zwischen Formular und Verwaltung */
+.nav {
+    margin-top: 1rem;
+    text-align: center;
+    font-family: var(--nz-f-mono);
+    font-size: .72rem;
+}
+
+.nav a { color: var(--nz-ink-70); text-decoration: underline; text-decoration-thickness: 2px; }
+.nav a:hover { color: var(--nz-ink); background: var(--nz-signal); text-decoration: none; }
+
+/* Fuß */
+footer {
+    width: 100%;
+    border-top: var(--nz-stroke-rule) solid var(--nz-ink);
+    padding: .9rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    font-family: var(--nz-f-mono);
+    font-size: .72rem;
+}
+
+footer a { color: var(--nz-ink-70); text-decoration: none; display: inline-flex; align-items: center; }
+footer a:hover { color: var(--nz-ink); background: var(--nz-signal); }
+
+.gh svg { display: block; width: 18px; height: 18px; fill: currentColor; }
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+}
+
+/* Schmalere Displays: Spalten fallen von hinten weg, damit „Löschen"
+   sichtbar bleibt statt aus dem Bild zu rutschen. */
+@media (max-width: 700px) {
+    .col-date,
+    .links th:nth-child(4) { display: none; }
+    .col-target { max-width: 150px; }
+}
+
+@media (max-width: 600px) {
+    main  { padding: 1.5rem .75rem; }
+    .card { padding: 1.25rem; box-shadow: 4px 4px 0 0 var(--nz-ink); }
+}
+
+@media (max-width: 560px) {
+    .col-hits,
+    .links th:nth-child(3) { display: none; }
+
+    .links th,
+    .links td { padding: .5rem .4rem; }
+
+    .col-target { max-width: 118px; font-size: .72rem; }
+    .btn-del    { padding: .3rem .45rem; font-size: .6rem; letter-spacing: .04em; }
+}
