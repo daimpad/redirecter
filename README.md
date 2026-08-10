@@ -77,9 +77,11 @@ erreichbar, damit lokale Entwicklung ohne Setup funktioniert.
 ├── .htaccess          # Apache Rewrite-Regeln + Dateischutz
 ├── config.php         # Zentrale Konfiguration (nicht via HTTP erreichbar)
 ├── functions.php      # Geteilte Funktionen (nicht via HTTP erreichbar)
-├── index.php          # Admin-Formular + Verwaltungslogik
+├── index.php          # Formular zum Anlegen
+├── verwalten.php      # Liste aller Kurzlinks + Löschen
 ├── redirect.php       # Slug → 302-Redirect
 ├── assets/
+│   ├── style.css      # nozilla CI, geteilt von beiden Seiten
 │   ├── app.js         # Kopier-Button + QR-Code (optional, progressiv)
 │   ├── favicon.svg    # nozilla CI (+ favicon-32.png / favicon-180.png)
 │   └── fonts/         # Zilla Slab · Inter · Space Mono, subgesetzt als WOFF2
@@ -104,8 +106,17 @@ Bleibt der Slug leer, wird ein zufälliger 6-stelliger Base62-String generiert (
 
 ### Kurzlinks verwalten
 
-Gespeicherte Links können direkt in `storage/data.json` bearbeitet oder gelöscht werden.  
-Legacy-Einträge im alten String-Format werden beim ersten Aufruf automatisch migriert.
+`verwalten.php` listet alle Kurzlinks mit Slug, Ziel-URL, Klick-Zähler und
+Erstelldatum — neueste zuerst. Jeder Eintrag lässt sich per „Löschen" entfernen
+(mit Bestätigungsdialog). Erreichbar über den Link unter dem Formular.
+
+Die Seite liegt hinter demselben Passwortschutz wie das Formular und trägt
+`noindex, nofollow`. Löschen läuft CSRF-geschützt und über einen 303-Redirect,
+ein Reload versucht also nicht erneut zu löschen.
+
+Alternativ können Einträge weiterhin direkt in `storage/data.json` bearbeitet
+werden. Legacy-Einträge im alten String-Format (`"slug": "url"`) werden korrekt
+angezeigt und beim ersten Redirect automatisch migriert.
 
 ### Kurzlink aufrufen
 
@@ -154,6 +165,7 @@ apt install php-apcu
 | **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — Ausnahme nur über Loopback |
 | **Post/Redirect/Get** | Erfolg und Fehler laufen über einen 303-Redirect; ein Reload sendet nichts erneut ab |
 | **Kein Dritt-CDN** | Schriften selbst gehostet, CSP ohne externe Hosts (`default-src 'none'`); der QR-Dienst wird erst auf Klick kontaktiert |
+| **CSP ohne `unsafe-inline`** | Styles und Skripte liegen in eigenen Dateien (`style-src 'self'`, `script-src 'self'`) |
 | **Timing-sichere Auth** | `hash_equals()` für Benutzername + `password_verify()` immer ausgeführt (kein Short-Circuit, der Username-Enumeration via Timing ermöglicht) |
 | **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; atomares `apcu_add`+`apcu_inc` (kein TOCTOU), Session als Fallback |
 | **CSRF-Schutz** | Session-Token wird vor dem POST-Handler initialisiert; explizite Leer-Prüfung verhindert `hash_equals('','')` Bypass |
@@ -178,7 +190,10 @@ Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
 | **data.json** | Datei muss gültiges JSON sein |
 | **.htaccess** | `RewriteEngine`, `Options -Indexes` und Datei-Schutz vorhanden |
 | **storage/.htaccess** | `Require all denied` — kein HTTP-Direktzugriff auf Datenspeicher |
-| **Pflichtdateien** | Alle sieben Kerndateien müssen committed sein |
+| **Pflichtdateien** | Alle Kerndateien inkl. Schriften und Stylesheet müssen committed sein |
+| **Kein Dritt-CDN** | Keine Referenz auf `fonts.googleapis.com` / `fonts.gstatic.com` |
+| **Keine inline-Styles** | Kein `style="…"` — die CSP (`style-src 'self'`) würde es verwerfen |
+| **Fail-closed** | `requireAuth()` lässt ohne Hash keine Fremd-IP durch |
 
 Lokal testen:
 
@@ -188,6 +203,10 @@ for f in *.php; do php -l "$f"; done
 
 # JSON validieren
 python3 -c "import json; json.load(open('storage/data.json'))"
+
+# Fail-closed-Verhalten prüfen (darf nichts ausgeben ausser dem Setup-Hinweis)
+php -r '$_SERVER["REMOTE_ADDR"]="203.0.113.7";
+        require "config.php"; require "functions.php"; requireAuth();'
 ```
 
 ## Einschränkungen
