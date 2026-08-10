@@ -62,18 +62,6 @@ function entryUrl(mixed $entry): string
     return is_array($entry) ? (string)($entry['url'] ?? '') : (string)$entry;
 }
 
-/** Gibt den Klick-Zähler eines Eintrags zurück. */
-function entryHits(mixed $entry): int
-{
-    return is_array($entry) ? (int)($entry['hits'] ?? 0) : 0;
-}
-
-/** Gibt das Erstelldatum eines Eintrags zurück. */
-function entryCreated(mixed $entry): string
-{
-    return is_array($entry) ? (string)($entry['created'] ?? '—') : '—';
-}
-
 /**
  * Schreibt einen neuen Slug atomisch in DATA_FILE.
  * Serialisierung über .lock-Datei (stabiles Inode, wird nie umbenannt).
@@ -105,45 +93,6 @@ function saveData(string $slug, string $url): ?string
     }
 
     $stored[$slug] = ['url' => $url, 'hits' => 0, 'created' => date('Y-m-d')];
-    $ok = atomicWriteData($stored);
-
-    flock($fp, LOCK_UN);
-    fclose($fp);
-
-    return $ok ? null : 'Schreibfehler.';
-}
-
-/**
- * Löscht einen Slug aus DATA_FILE.
- * Rückgabe: null = Erfolg | 'SLUG_NOT_FOUND' | Fehlermeldung
- */
-function deleteSlug(string $slug): ?string
-{
-    $fp = fopen(DATA_FILE . '.lock', 'c');
-    if ($fp === false) {
-        return 'Lock-Datei konnte nicht geöffnet werden.';
-    }
-
-    if (!flock($fp, LOCK_EX)) {
-        fclose($fp);
-        return 'Datei ist gesperrt – bitte erneut versuchen.';
-    }
-
-    $raw    = is_file(DATA_FILE) ? file_get_contents(DATA_FILE) : '';
-    $stored = json_decode($raw !== false ? $raw : '', true);
-    if (!is_array($stored)) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return 'Datenspeicher beschädigt.';
-    }
-
-    if (!isset($stored[$slug])) {
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        return 'SLUG_NOT_FOUND';
-    }
-
-    unset($stored[$slug]);
     $ok = atomicWriteData($stored);
 
     flock($fp, LOCK_UN);
@@ -237,14 +186,34 @@ function generateSlug(): string
     return $result;
 }
 
+/** Läuft die Anfrage über Loopback, also lokale Entwicklung? */
+function isLocalRequest(): bool
+{
+    return in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+}
+
 /**
  * Erzwingt HTTP Basic Auth anhand der Werte aus config.php.
- * Ist ADMIN_PASSWORD_HASH leer, wird Auth übersprungen.
+ *
+ * Ohne ADMIN_PASSWORD_HASH wird der Zugang gesperrt, nicht geöffnet: eine
+ * ungeschützte Installation wäre ein offenes Relay, über das Fremde beliebige
+ * Weiterleitungen auf der eigenen Domain anlegen könnten. Nur über Loopback
+ * bleibt das Formular ohne Hash erreichbar, damit lokale Entwicklung ohne
+ * Setup funktioniert.
  */
 function requireAuth(): void
 {
     if (ADMIN_PASSWORD_HASH === '') {
-        return;
+        if (isLocalRequest()) {
+            return;
+        }
+        http_response_code(503);
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit(
+            "Setup unvollständig: ADMIN_PASSWORD_HASH ist nicht gesetzt.\n\n"
+            . "Hash erzeugen und in config.php eintragen:\n"
+            . "  php -r \"echo password_hash('deinPasswort', PASSWORD_BCRYPT);\"\n"
+        );
     }
 
     $user = $_SERVER['PHP_AUTH_USER'] ?? '';

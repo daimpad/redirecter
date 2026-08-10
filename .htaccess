@@ -18,3 +18,16 @@ RewriteRule ^([A-Za-z0-9_-]+)/?$ redirect.php?s=$1 [L,QSA]
 <FilesMatch "^(config|functions)\.php$">
     Require all denied
 </FilesMatch>
+
+# Selbst gehostete Schriften (nozilla CI — kein Dritt-CDN)
+<IfModule mod_mime.c>
+    AddType font/woff2 .woff2
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType font/woff2      "access plus 1 year"
+    ExpiresByType image/svg+xml   "access plus 1 month"
+    ExpiresByType image/png       "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 week"
+</IfModule>
