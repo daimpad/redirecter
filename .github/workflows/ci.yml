@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: PHP-Syntax & Sicherheitsdateien prüfen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP-Syntax — alle *.php
+        run: |
+          set -e
+          errors=0
+          for f in *.php; do
+            php -l "$f" || errors=$((errors+1))
+          done
+          [ "$errors" -eq 0 ] || exit 1
+          echo "✓ PHP-Syntax fehlerfrei"
+
+      - name: data.json — gültiges JSON
+        run: |
+          set -e
+          python3 -c "import json; json.load(open('storage/data.json'))"
+          echo "✓ data.json ist gültiges JSON"
+
+      - name: .htaccess — Sicherheitsregeln vorhanden
+        run: |
+          set -e
+          grep -q 'RewriteEngine' .htaccess      || { echo "✗ RewriteEngine fehlt";    exit 1; }
+          grep -q 'Options -Indexes' .htaccess   || { echo "✗ Options -Indexes fehlt"; exit 1; }
+          grep -q 'Require all denied' .htaccess || { echo "✗ Datei-Schutz fehlt";     exit 1; }
+          echo "✓ .htaccess-Regeln vorhanden"
+
+      - name: storage/.htaccess — HTTP-Zugriff gesperrt
+        run: |
+          set -e
+          grep -q 'Require all denied' storage/.htaccess \
+            || { echo "✗ storage/.htaccess sperrt keinen HTTP-Zugriff"; exit 1; }
+          echo "✓ storage/.htaccess sperrt HTTP-Zugriff"
+
+      - name: Pflichtdateien vorhanden
+        run: |
+          set -e
+          missing=0
+          for f in \
+            .htaccess \
+            config.php \
+            functions.php \
+            index.php \
+            redirect.php \
+            storage/.htaccess \
+            storage/data.json
+          do
+            [ -f "$f" ] || { echo "✗ fehlt: $f"; missing=$((missing+1)); }
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "✓ Alle Pflichtdateien vorhanden"
