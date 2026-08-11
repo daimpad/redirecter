@@ -1,0 +1,6 @@
+# Serverspezifische Konfiguration — enthält den Passwort-Hash
+config.local.php
+
+# Laufzeitdateien des Datenspeichers
+storage/data.json.lock
+storage/data.json.tmp.*

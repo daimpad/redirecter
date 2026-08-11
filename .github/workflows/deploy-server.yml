@@ -1,0 +1,140 @@
+name: Deploy auf url.nozilla.net
+
+# Läuft erst, wenn die CI für denselben Commit grün ist — so geht nichts live,
+# was die Prüfungen nicht bestanden hat.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Ein Deploy zur Zeit; laufende nicht abbrechen, damit nichts halb online geht.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Dateien übertragen
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: production
+      url: https://url.nozilla.net
+
+    steps:
+      # Genau den Stand ausliefern, den die CI geprüft hat — nicht einfach den
+      # aktuellen main, der inzwischen weitergelaufen sein kann.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Secrets vorhanden?
+        env:
+          SSH_HOST:    ${{ secrets.SSH_HOST }}
+          SSH_USER:    ${{ secrets.SSH_USER }}
+          SSH_KEY:     ${{ secrets.SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -e
+          missing=0
+          for name in SSH_HOST SSH_USER SSH_KEY DEPLOY_PATH; do
+            [ -n "${!name}" ] || { echo "✗ Secret fehlt: $name"; missing=1; }
+          done
+          [ "$missing" -eq 0 ] || {
+            echo ""
+            echo "Anlegen unter Settings → Secrets and variables → Actions."
+            exit 1
+          }
+          echo "✓ Alle Secrets gesetzt"
+
+      - name: SSH einrichten
+        env:
+          SSH_HOST:        ${{ secrets.SSH_HOST }}
+          SSH_KEY:         ${{ secrets.SSH_KEY }}
+          SSH_PORT:        ${{ secrets.SSH_PORT }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            echo "✓ Host-Key aus Secret übernommen"
+          else
+            # Ohne gepinnten Host-Key wird beim ersten Kontakt vertraut. Sicherer
+            # ist das Secret SSH_KNOWN_HOSTS — siehe README.
+            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            echo "⚠ Host-Key per ssh-keyscan übernommen — SSH_KNOWN_HOSTS setzen für echtes Pinning"
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Zielverzeichnis vorbereiten
+        env:
+          SSH_HOST:    ${{ secrets.SSH_HOST }}
+          SSH_USER:    ${{ secrets.SSH_USER }}
+          SSH_PORT:    ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -e
+          ssh -i ~/.ssh/id_deploy -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" \
+            "set -e
+             mkdir -p '$DEPLOY_PATH/storage'
+             [ -f '$DEPLOY_PATH/storage/data.json' ] || echo '{}' > '$DEPLOY_PATH/storage/data.json'
+             chmod 775 '$DEPLOY_PATH/storage'
+             chmod 664 '$DEPLOY_PATH/storage/data.json'"
+          echo "✓ storage/ vorhanden und beschreibbar"
+
+      # --delete räumt entfernte Dateien mit weg. Die Ausschlüsse sind deshalb
+      # nicht kosmetisch: data.json ist der Datenbestand und config.local.php
+      # der Passwort-Hash — beide existieren nur auf dem Server und würden
+      # sonst bei jedem Deploy gelöscht.
+      - name: Dateien synchronisieren
+        env:
+          SSH_HOST:    ${{ secrets.SSH_HOST }}
+          SSH_USER:    ${{ secrets.SSH_USER }}
+          SSH_PORT:    ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -e
+          rsync -rlvz --delete \
+            -e "ssh -i ~/.ssh/id_deploy -p ${SSH_PORT:-22}" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='docs/' \
+            --exclude='README.md' \
+            --exclude='config.local.php' \
+            --exclude='storage/data.json' \
+            --exclude='storage/data.json.lock' \
+            --exclude='storage/data.json.tmp.*' \
+            ./ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Installation prüfen
+        run: |
+          set -e
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://url.nozilla.net/ || echo 000)
+          case "$code" in
+            200|401)
+              echo "✓ Erreichbar (HTTP $code — Passwortschutz aktiv)" ;;
+            503)
+              echo "⚠ HTTP 503 — ADMIN_PASSWORD_HASH fehlt in config.local.php auf dem Server."
+              echo "  Deploy war erfolgreich, aber das Formular bleibt gesperrt."
+              echo "  Siehe config.local.example.php." ;;
+            000)
+              echo "⚠ Keine Antwort — Domain/DNS prüfen. Dateien sind übertragen." ;;
+            *)
+              echo "✗ Unerwartet: HTTP $code"; exit 1 ;;
+          esac
+
+      - name: Aufräumen
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

@@ -36,6 +36,30 @@ jobs:
           grep -q 'Require all denied' .htaccess || { echo "✗ Datei-Schutz fehlt";     exit 1; }
           echo "✓ .htaccess-Regeln vorhanden"
 
+      # config.local.php trägt den Passwort-Hash. Deckt das FilesMatch-Muster
+      # sie nicht ab, wäre der Hash über HTTP abrufbar.
+      - name: .htaccess sperrt config.local.php
+        run: |
+          set -e
+          pattern=$(grep -oP '(?<=<FilesMatch ")[^"]+' .htaccess | head -1)
+          [ -n "$pattern" ] || { echo "✗ kein FilesMatch gefunden"; exit 1; }
+          for f in config.php config.local.php config.local.example.php functions.php; do
+            echo "$f" | grep -qP "$pattern" \
+              || { echo "✗ FilesMatch deckt $f nicht ab: $pattern"; exit 1; }
+          done
+          echo "✓ FilesMatch sperrt alle Konfigurations- und Hilfsdateien"
+
+      - name: config.local.php nicht eingecheckt
+        run: |
+          set -e
+          if git ls-files --error-unmatch config.local.php >/dev/null 2>&1; then
+            echo "✗ config.local.php liegt im Repository — sie enthält den Passwort-Hash"
+            exit 1
+          fi
+          grep -q '^config\.local\.php$' .gitignore \
+            || { echo "✗ config.local.php fehlt in .gitignore"; exit 1; }
+          echo "✓ config.local.php bleibt serverseitig"
+
       - name: storage/.htaccess — HTTP-Zugriff gesperrt
         run: |
           set -e
@@ -56,6 +80,7 @@ jobs:
             storage/.htaccess \
             storage/data.json \
             verwalten.php \
+            config.local.example.php \
             assets/app.js \
             assets/style.css \
             assets/favicon.svg \

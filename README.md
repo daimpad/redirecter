@@ -40,18 +40,32 @@ Stelle sicher, dass `mod_rewrite` aktiviert und `AllowOverride All` für das Ver
 
 ## Konfiguration
 
-Alle Einstellungen befinden sich in **`config.php`**:
+Die Konfiguration ist zweigeteilt:
+
+| Datei | Im Repository | Zweck |
+|---|---|---|
+| `config.php` | ja | Vorgaben für alle Installationen |
+| `config.local.php` | **nein** | Serverspezifisches, allen voran der Passwort-Hash |
+
+`config.php` lädt `config.local.php`, falls vorhanden. Jeder dort definierte Wert
+gewinnt. Ohne diese Trennung würde jedes Deployment den Hash des Servers durch
+den leeren Standard ersetzen und die Installation aussperren — `config.local.php`
+ist deshalb von `.gitignore` und vom rsync-Ausschluss gedeckt.
 
 ```php
-// Base-URL der Installation (kein abschließender Slash)
-const BASE_URL = 'https://deinedomain.de';
+// config.php — Vorgaben
+defined('BASE_URL')            || define('BASE_URL', 'https://url.nozilla.net');
+defined('RATE_LIMIT_MAX')      || define('RATE_LIMIT_MAX', 10);
+defined('ADMIN_USER')          || define('ADMIN_USER', 'admin');
+defined('ADMIN_PASSWORD_HASH') || define('ADMIN_PASSWORD_HASH', '');
+```
 
-// Rate Limiting: max. Link-Erstellungen pro Minute pro IP (0 = deaktiviert)
-const RATE_LIMIT_MAX = 10;
+Einrichtung auf dem Server (einmalig):
 
-// Admin-Zugangsdaten
-const ADMIN_USER          = 'admin';
-const ADMIN_PASSWORD_HASH = ''; // leer = nur über localhost erreichbar
+```bash
+cp config.local.example.php config.local.php
+php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT), PHP_EOL;"
+# Ausgabe in config.local.php bei ADMIN_PASSWORD_HASH eintragen
 ```
 
 ### Passwortschutz aktivieren — Pflicht vor dem Deployment
@@ -61,7 +75,7 @@ const ADMIN_PASSWORD_HASH = ''; // leer = nur über localhost erreichbar
 php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"
 ```
 
-Den ausgegebenen Hash in `config.php` bei `ADMIN_PASSWORD_HASH` eintragen.  
+Den ausgegebenen Hash in `config.local.php` bei `ADMIN_PASSWORD_HASH` eintragen.  
 Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erreichbar.
 
 Ohne Hash antwortet das Formular über eine Netzwerkadresse mit **HTTP 503** und
@@ -75,7 +89,9 @@ erreichbar, damit lokale Entwicklung ohne Setup funktioniert.
 ```
 .
 ├── .htaccess          # Apache Rewrite-Regeln + Dateischutz
-├── config.php         # Zentrale Konfiguration (nicht via HTTP erreichbar)
+├── config.php         # Vorgaben (nicht via HTTP erreichbar)
+├── config.local.php   # Serverspezifisch, nicht im Repository, überlebt Deploys
+├── config.local.example.php  # Vorlage dafür
 ├── functions.php      # Geteilte Funktionen (nicht via HTTP erreichbar)
 ├── index.php          # Formular zum Anlegen
 ├── verwalten.php      # Liste aller Kurzlinks + Löschen
@@ -180,6 +196,71 @@ apt install php-apcu
 | **Directory Listing** | `Options -Indexes` in `.htaccess` |
 | **Sichere Header** | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy` |
 
+## Deployment
+
+Produktion ist **https://url.nozilla.net**. Jeder Push auf `main` geht dorthin —
+aber erst, nachdem die CI für denselben Commit grün ist
+(`.github/workflows/deploy-server.yml`). Übertragen wird per `rsync` über SSH,
+genau der Stand, den die CI geprüft hat. Manuell startbar über den Actions-Tab.
+
+### Einmalige Einrichtung
+
+**1. SSH-Schlüsselpaar für den Deploy erzeugen** (ohne Passphrase, eigener
+Schlüssel nur für diesen Zweck):
+
+```bash
+ssh-keygen -t ed25519 -C "github-deploy-redirecter" -f ~/.ssh/redirecter_deploy -N ""
+```
+
+Öffentlichen Teil auf dem Server hinterlegen:
+
+```bash
+ssh-copy-id -i ~/.ssh/redirecter_deploy.pub benutzer@url.nozilla.net
+# oder: Inhalt von redirecter_deploy.pub an ~/.ssh/authorized_keys anhängen
+```
+
+**2. Secrets im Repository anlegen** — Settings → Secrets and variables → Actions:
+
+| Secret | Pflicht | Beispiel |
+|---|---|---|
+| `SSH_HOST` | ja | `url.nozilla.net` |
+| `SSH_USER` | ja | dein SSH-Benutzer |
+| `SSH_KEY` | ja | kompletter Inhalt von `~/.ssh/redirecter_deploy` (der **private** Teil) |
+| `DEPLOY_PATH` | ja | z. B. `/var/www/vhosts/nozilla.net/url.nozilla.net` |
+| `SSH_PORT` | nein | nur bei abweichendem Port (Standard 22) |
+| `SSH_KNOWN_HOSTS` | nein | Ausgabe von `ssh-keyscan url.nozilla.net` |
+
+Ohne `SSH_KNOWN_HOSTS` übernimmt der Workflow den Host-Key beim ersten Kontakt
+ungeprüft. Das Secret zu setzen pinnt ihn und schließt eine Man-in-the-Middle-
+Lücke zwischen Runner und Server.
+
+**3. `config.local.php` auf dem Server anlegen** — siehe [Konfiguration](#konfiguration).
+Ohne Hash antwortet die Seite nach dem Deploy mit HTTP 503.
+
+### Was nicht übertragen wird
+
+`--delete` räumt Dateien mit weg, die im Repository verschwunden sind. Diese
+Ausschlüsse sind deshalb sicherheitsrelevant, nicht kosmetisch:
+
+| Ausgespart | Grund |
+|---|---|
+| `storage/data.json` | der Datenbestand — läge sonst nach jedem Deploy leer da |
+| `storage/data.json.lock` · `.tmp.*` | Laufzeitdateien |
+| `config.local.php` | der Passwort-Hash |
+| `.git/` · `.github/` · `.gitignore` | gehört nicht auf den Webserver |
+| `docs/` · `README.md` | nur für GitHub Pages bzw. Leser |
+
+Der Workflow legt `storage/` und eine leere `data.json` an, falls sie fehlen,
+und setzt die Schreibrechte. Ein erster Deploy auf ein leeres Verzeichnis
+funktioniert damit ohne Vorarbeit. Danach prüft er, ob die Seite antwortet, und
+weist auf einen fehlenden Passwort-Hash hin (HTTP 503).
+
+**Voraussetzung auf dem Server:** SSH-Zugang und `rsync`. Fehlt `rsync`, bricht
+der Deploy mit `rsync: command not found` ab.
+
+Die zweite Pipeline (`deploy.yml`) veröffentlicht `docs/` als Vorschauseite auf
+GitHub Pages und hat mit dem Server nichts zu tun.
+
 ## CI
 
 Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
@@ -194,6 +275,8 @@ Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
 | **Kein Dritt-CDN** | Keine Referenz auf `fonts.googleapis.com` / `fonts.gstatic.com` |
 | **Keine inline-Styles** | Kein `style="…"` — die CSP (`style-src 'self'`) würde es verwerfen |
 | **Fail-closed** | `requireAuth()` lässt ohne Hash keine Fremd-IP durch |
+| **Dateischutz** | `.htaccess` sperrt `config.php`, `config.local.php` und `functions.php` |
+| **Kein Hash im Repo** | `config.local.php` ist weder eingecheckt noch eincheckbar |
 
 Lokal testen:
 
