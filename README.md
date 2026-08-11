@@ -205,19 +205,62 @@ genau der Stand, den die CI geprüft hat. Manuell startbar über den Actions-Tab
 
 ### Einmalige Einrichtung
 
-**1. SSH-Schlüsselpaar für den Deploy erzeugen** (ohne Passphrase, eigener
-Schlüssel nur für diesen Zweck):
+> **Die Secrets werden nicht auf der Kommandozeile gesetzt**, sondern auf
+> github.com unter Settings → Secrets and variables → Actions → *New repository
+> secret*. Terminal bzw. PowerShell brauchst du nur, um den Schlüssel zu
+> erzeugen und auf den Server zu bringen. (Wer lieber alles im Terminal macht,
+> findet unten die Variante mit der GitHub CLI.)
+
+**1. SSH-Schlüsselpaar für den Deploy erzeugen** — eigener Schlüssel nur für
+diesen Zweck, **ohne Passphrase**: eine GitHub Action kann keine eintippen.
+
+<details open>
+<summary><b>Windows 11 (PowerShell)</b></summary>
+
+OpenSSH ist in Windows 11 enthalten. Prüfen mit `ssh -V`; fehlt es, einmalig als
+Administrator `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`.
+
+```powershell
+ssh-keygen -t ed25519 -C "github-deploy-redirecter" -f "$env:USERPROFILE\.ssh\redirecter_deploy"
+```
+
+Bei der Frage nach der Passphrase **zweimal Enter** drücken. (`-N ""` funktioniert
+in PowerShell nicht zuverlässig, weil leere Anführungszeichen verschluckt werden.)
+
+Öffentlichen Teil auf dem Server hinterlegen — `ssh-copy-id` gibt es unter
+Windows nicht, deshalb direkt anhängen:
+
+```powershell
+$pub = (Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy.pub" -Raw).Trim()
+ssh benutzer@url.nozilla.net "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pub' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+```
+
+Prüfen, ob Anmeldung per Schlüssel klappt **und** `rsync` auf dem Server liegt:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\redirecter_deploy" benutzer@url.nozilla.net "echo Login-OK; rsync --version | Select-Object -First 1"
+```
+
+Der private Schlüssel für das Secret `SSH_KEY` — komplett, inklusive der
+`BEGIN`/`END`-Zeilen:
+
+```powershell
+Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy" -Raw | Set-Clipboard
+```
+
+</details>
+
+<details>
+<summary><b>Linux / macOS</b></summary>
 
 ```bash
 ssh-keygen -t ed25519 -C "github-deploy-redirecter" -f ~/.ssh/redirecter_deploy -N ""
-```
-
-Öffentlichen Teil auf dem Server hinterlegen:
-
-```bash
 ssh-copy-id -i ~/.ssh/redirecter_deploy.pub benutzer@url.nozilla.net
-# oder: Inhalt von redirecter_deploy.pub an ~/.ssh/authorized_keys anhängen
+ssh -i ~/.ssh/redirecter_deploy benutzer@url.nozilla.net 'echo Login-OK; rsync --version | head -1'
+cat ~/.ssh/redirecter_deploy   # Inhalt für das Secret SSH_KEY
 ```
+
+</details>
 
 **2. Secrets im Repository anlegen** — Settings → Secrets and variables → Actions:
 
@@ -232,10 +275,44 @@ ssh-copy-id -i ~/.ssh/redirecter_deploy.pub benutzer@url.nozilla.net
 
 Ohne `SSH_KNOWN_HOSTS` übernimmt der Workflow den Host-Key beim ersten Kontakt
 ungeprüft. Das Secret zu setzen pinnt ihn und schließt eine Man-in-the-Middle-
-Lücke zwischen Runner und Server.
+Lücke zwischen Runner und Server:
+
+```powershell
+ssh-keyscan url.nozilla.net | Set-Clipboard      # Windows
+ssh-keyscan url.nozilla.net                      # Linux/macOS
+```
+
+`DEPLOY_PATH` ist das Web-Verzeichnis der Domain — bei Plesk üblicherweise
+`httpdocs`. Finden lässt es sich so:
+
+```powershell
+ssh benutzer@url.nozilla.net "ls -d ~/httpdocs ~/public_html /var/www/vhosts/*/url.nozilla.net 2>/dev/null; pwd"
+```
+
+<details>
+<summary>Alternative: Secrets über die GitHub CLI setzen</summary>
+
+Mit installiertem [`gh`](https://cli.github.com/) geht es auch ohne Browser.
+PowerShell kennt keine `<`-Eingabeumleitung, deshalb per Pipe:
+
+```powershell
+gh auth login
+gh secret set SSH_HOST    --body "url.nozilla.net"
+gh secret set SSH_USER    --body "deinBenutzer"
+gh secret set DEPLOY_PATH --body "/var/www/vhosts/nozilla.net/url.nozilla.net"
+Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy" -Raw | gh secret set SSH_KEY
+ssh-keyscan url.nozilla.net | gh secret set SSH_KNOWN_HOSTS
+gh secret list
+```
+
+</details>
 
 **3. `config.local.php` auf dem Server anlegen** — siehe [Konfiguration](#konfiguration).
 Ohne Hash antwortet die Seite nach dem Deploy mit HTTP 503.
+
+**4. Deploy auslösen** — Actions → *Deploy auf url.nozilla.net* → *Run workflow*.
+Fehlt ein Secret, bricht der Lauf gleich im ersten Schritt ab und nennt die
+fehlenden Namen; übertragen wird dann nichts.
 
 ### Was nicht übertragen wird
 
