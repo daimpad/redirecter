@@ -10,9 +10,9 @@ declare(strict_types=1);
  *   php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT), PHP_EOL;"
  *   # Ausgabe unten bei ADMIN_PASSWORD_HASH eintragen
  *
- * Die Datei ist per .gitignore vom Repository und per rsync-Ausschluss vom
- * Deploy ausgenommen; sie überlebt also jedes Deployment. Der Webserver
- * blockiert den direkten HTTP-Zugriff darauf (siehe .htaccess).
+ * Die Datei steht in .gitignore und gehört damit nicht zum Repository; ein
+ * Git-Deploy (Plesk) lässt sie unangetastet. Der Webserver blockiert den
+ * direkten HTTP-Zugriff darauf (siehe .htaccess).
  *
  * Hier nur eintragen, was vom Standard in config.php abweichen soll.
  */

@@ -1,10 +1,18 @@
 Options -Indexes
 
+# Plesk legt ein index.html („Hier entsteht eine neue Webseite") in httpdocs.
+# Ohne diese Zeile gewinnt es gegen index.php und die App bleibt unsichtbar.
+DirectoryIndex index.php
+
 RewriteEngine On
 
 # HTTP → HTTPS
 RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# Plesk zieht das ganze Repository in den Web-Root. Was nur ins Repository
+# gehört, soll nicht über HTTP abrufbar sein.
+RewriteRule ^(README\.md|\.gitignore|\.github/|docs/) - [R=404,L]
 
 # Statische Dateien und Verzeichnisse direkt durchlassen
 RewriteCond %{REQUEST_FILENAME} -f [OR]

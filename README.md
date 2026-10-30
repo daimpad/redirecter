@@ -25,8 +25,8 @@ git clone https://github.com/daimpad/redirecter.git /var/www/html/shortener
 cd /var/www/html/shortener
 
 # storage-Verzeichnis beschreibbar machen
+# (data.json entsteht beim ersten Kurzlink von selbst)
 chmod 775 storage
-chmod 664 storage/data.json
 chown -R www-data:www-data storage
 ```
 
@@ -50,7 +50,7 @@ Die Konfiguration ist zweigeteilt:
 `config.php` lädt `config.local.php`, falls vorhanden. Jeder dort definierte Wert
 gewinnt. Ohne diese Trennung würde jedes Deployment den Hash des Servers durch
 den leeren Standard ersetzen und die Installation aussperren — `config.local.php`
-ist deshalb von `.gitignore` und vom rsync-Ausschluss gedeckt.
+steht deshalb in `.gitignore` und wird von keinem Deploy angefasst.
 
 ```php
 // config.php — Vorgaben
@@ -71,18 +71,19 @@ php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT), PHP_EOL;"
 ### Passwortschutz aktivieren — Pflicht vor dem Deployment
 
 ```bash
-# Hash erzeugen und in config.php eintragen
+# Hash erzeugen und in config.local.php eintragen
 php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"
 ```
 
 Den ausgegebenen Hash in `config.local.php` bei `ADMIN_PASSWORD_HASH` eintragen.  
 Danach schützt HTTP Basic Auth das Formular; Redirects bleiben öffentlich erreichbar.
 
-Ohne Hash antwortet das Formular über eine Netzwerkadresse mit **HTTP 503** und
-einem Setup-Hinweis. Das ist Absicht: eine ungeschützte Installation wäre ein
+Ohne Hash antworten Formular und Verwaltung mit **HTTP 503** und einem
+Setup-Hinweis — ausnahmslos, auch lokal. Eine ungeschützte Installation wäre ein
 offenes Relay, über das Fremde beliebige Weiterleitungen auf der eigenen Domain
-anlegen könnten. Über `127.0.0.1` bzw. `::1` bleibt das Formular ohne Hash
-erreichbar, damit lokale Entwicklung ohne Setup funktioniert.
+anlegen könnten. Eine Ausnahme für `127.0.0.1` gibt es bewusst nicht: hinter dem
+nginx-Proxy von Plesk kann jede Anfrage von dort zu kommen scheinen. Für lokale
+Tests einfach auch dort eine `config.local.php` anlegen.
 
 ## Dateistruktur
 
@@ -103,7 +104,7 @@ erreichbar, damit lokale Entwicklung ohne Setup funktioniert.
 │   └── fonts/         # Zilla Slab · Inter · Space Mono, subgesetzt als WOFF2
 └── storage/
     ├── .htaccess      # Blockiert HTTP-Zugriff auf das Verzeichnis
-    ├── data.json      # Datenspeicher (Slug ↔ Ziel-URL)
+    ├── data.json      # Datenspeicher (Slug ↔ Ziel-URL) — nur auf dem Server, nicht im Repository
     └── data.json.lock # Exklusive Lock-Datei für atomare Schreibvorgänge
 ```
 
@@ -177,8 +178,10 @@ apt install php-apcu
 
 | Maßnahme | Details |
 |---|---|
-| **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.php` |
-| **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — Ausnahme nur über Loopback |
+| **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.local.php` |
+| **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — ohne Ausnahme |
+| **Repo-Dateien** | `README.md`, `docs/`, `.github/` liefert `.htaccess` nicht aus (HTTP 404), obwohl Plesk sie in den Web-Root legt |
+| **Reservierte Slugs** | Slugs, die wie eine vorhandene Datei oder ein Ordner heißen (`assets`, `storage` …), werden abgelehnt — sie wären nie erreichbar |
 | **Post/Redirect/Get** | Erfolg und Fehler laufen über einen 303-Redirect; ein Reload sendet nichts erneut ab |
 | **Kein Dritt-CDN** | Schriften selbst gehostet, CSP ohne externe Hosts (`default-src 'none'`); der QR-Dienst wird erst auf Klick kontaktiert |
 | **CSP ohne `unsafe-inline`** | Styles und Skripte liegen in eigenen Dateien (`style-src 'self'`, `script-src 'self'`) |
@@ -198,145 +201,37 @@ apt install php-apcu
 
 ## Deployment
 
-Produktion ist **https://url.nozilla.net**. Jeder Push auf `main` geht dorthin —
-aber erst, nachdem die CI für denselben Commit grün ist
-(`.github/workflows/deploy-server.yml`). Übertragen wird per `rsync` über SSH,
-genau der Stand, den die CI geprüft hat. Manuell startbar über den Actions-Tab.
+Produktion ist **https://url.nozilla.net**. Der Server bezieht `main` selbst per
+Git (Plesk-Git-Anbindung) — je nach Einstellung dort automatisch oder per Klick
+auf *Pull*. Es gibt keinen eigenen Deploy-Workflow, keine SSH-Schlüssel und keine
+Secrets.
 
-### Einmalige Einrichtung
+Damit ein Deploy nichts zerstört, liegt alles, was nur auf dem Server existieren
+darf, außerhalb des Repositorys:
 
-> **Die Secrets werden nicht auf der Kommandozeile gesetzt**, sondern auf
-> github.com unter Settings → Secrets and variables → Actions → *New repository
-> secret*. Terminal bzw. PowerShell brauchst du nur, um den Schlüssel zu
-> erzeugen und auf den Server zu bringen. (Wer lieber alles im Terminal macht,
-> findet unten die Variante mit der GitHub CLI.)
-
-**1. SSH-Schlüsselpaar für den Deploy erzeugen** — eigener Schlüssel nur für
-diesen Zweck, **ohne Passphrase**: eine GitHub Action kann keine eintippen.
-
-<details open>
-<summary><b>Windows 11 (PowerShell)</b></summary>
-
-OpenSSH ist in Windows 11 enthalten. Prüfen mit `ssh -V`; fehlt es, einmalig als
-Administrator `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`.
-
-```powershell
-ssh-keygen -t ed25519 -C "github-deploy-redirecter" -f "$env:USERPROFILE\.ssh\redirecter_deploy"
-```
-
-Bei der Frage nach der Passphrase **zweimal Enter** drücken. (`-N ""` funktioniert
-in PowerShell nicht zuverlässig, weil leere Anführungszeichen verschluckt werden.)
-
-Öffentlichen Teil auf dem Server hinterlegen — `ssh-copy-id` gibt es unter
-Windows nicht, deshalb direkt anhängen:
-
-```powershell
-$pub = (Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy.pub" -Raw).Trim()
-ssh benutzer@url.nozilla.net "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pub' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-```
-
-Prüfen, ob Anmeldung per Schlüssel klappt **und** `rsync` auf dem Server liegt:
-
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\redirecter_deploy" benutzer@url.nozilla.net "echo Login-OK; rsync --version | Select-Object -First 1"
-```
-
-Der private Schlüssel für das Secret `SSH_KEY` — komplett, inklusive der
-`BEGIN`/`END`-Zeilen:
-
-```powershell
-Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy" -Raw | Set-Clipboard
-```
-
-</details>
-
-<details>
-<summary><b>Linux / macOS</b></summary>
-
-```bash
-ssh-keygen -t ed25519 -C "github-deploy-redirecter" -f ~/.ssh/redirecter_deploy -N ""
-ssh-copy-id -i ~/.ssh/redirecter_deploy.pub benutzer@url.nozilla.net
-ssh -i ~/.ssh/redirecter_deploy benutzer@url.nozilla.net 'echo Login-OK; rsync --version | head -1'
-cat ~/.ssh/redirecter_deploy   # Inhalt für das Secret SSH_KEY
-```
-
-</details>
-
-**2. Secrets im Repository anlegen** — Settings → Secrets and variables → Actions:
-
-| Secret | Pflicht | Beispiel |
-|---|---|---|
-| `SSH_HOST` | ja | `url.nozilla.net` |
-| `SSH_USER` | ja | dein SSH-Benutzer |
-| `SSH_KEY` | ja | kompletter Inhalt von `~/.ssh/redirecter_deploy` (der **private** Teil) |
-| `DEPLOY_PATH` | ja | z. B. `/var/www/vhosts/nozilla.net/url.nozilla.net` |
-| `SSH_PORT` | nein | nur bei abweichendem Port (Standard 22) |
-| `SSH_KNOWN_HOSTS` | nein | Ausgabe von `ssh-keyscan url.nozilla.net` |
-
-Ohne `SSH_KNOWN_HOSTS` übernimmt der Workflow den Host-Key beim ersten Kontakt
-ungeprüft. Das Secret zu setzen pinnt ihn und schließt eine Man-in-the-Middle-
-Lücke zwischen Runner und Server:
-
-```powershell
-ssh-keyscan url.nozilla.net | Set-Clipboard      # Windows
-ssh-keyscan url.nozilla.net                      # Linux/macOS
-```
-
-`DEPLOY_PATH` ist das Web-Verzeichnis der Domain — bei Plesk üblicherweise
-`httpdocs`. Finden lässt es sich so:
-
-```powershell
-ssh benutzer@url.nozilla.net "ls -d ~/httpdocs ~/public_html /var/www/vhosts/*/url.nozilla.net 2>/dev/null; pwd"
-```
-
-<details>
-<summary>Alternative: Secrets über die GitHub CLI setzen</summary>
-
-Mit installiertem [`gh`](https://cli.github.com/) geht es auch ohne Browser.
-PowerShell kennt keine `<`-Eingabeumleitung, deshalb per Pipe:
-
-```powershell
-gh auth login
-gh secret set SSH_HOST    --body "url.nozilla.net"
-gh secret set SSH_USER    --body "deinBenutzer"
-gh secret set DEPLOY_PATH --body "/var/www/vhosts/nozilla.net/url.nozilla.net"
-Get-Content "$env:USERPROFILE\.ssh\redirecter_deploy" -Raw | gh secret set SSH_KEY
-ssh-keyscan url.nozilla.net | gh secret set SSH_KNOWN_HOSTS
-gh secret list
-```
-
-</details>
-
-**3. `config.local.php` auf dem Server anlegen** — siehe [Konfiguration](#konfiguration).
-Ohne Hash antwortet die Seite nach dem Deploy mit HTTP 503.
-
-**4. Deploy auslösen** — Actions → *Deploy auf url.nozilla.net* → *Run workflow*.
-Fehlt ein Secret, bricht der Lauf gleich im ersten Schritt ab und nennt die
-fehlenden Namen; übertragen wird dann nichts.
-
-### Was nicht übertragen wird
-
-`--delete` räumt Dateien mit weg, die im Repository verschwunden sind. Diese
-Ausschlüsse sind deshalb sicherheitsrelevant, nicht kosmetisch:
-
-| Ausgespart | Grund |
+| Datei | Warum nicht im Repository |
 |---|---|
-| `storage/data.json` | der Datenbestand — läge sonst nach jedem Deploy leer da |
-| `storage/data.json.lock` · `.tmp.*` | Laufzeitdateien |
-| `config.local.php` | der Passwort-Hash |
-| `.git/` · `.github/` · `.gitignore` | gehört nicht auf den Webserver |
-| `docs/` · `README.md` | nur für GitHub Pages bzw. Leser |
+| `config.local.php` | der Passwort-Hash — ein Deploy würde ihn sonst überschreiben |
+| `storage/data.json` | die Kurzlinks — ein Deploy würde sie sonst auf `{}` zurücksetzen |
 
-Der Workflow legt `storage/` und eine leere `data.json` an, falls sie fehlen,
-und setzt die Schreibrechte. Ein erster Deploy auf ein leeres Verzeichnis
-funktioniert damit ohne Vorarbeit. Danach prüft er, ob die Seite antwortet, und
-weist auf einen fehlenden Passwort-Hash hin (HTTP 503).
+Beide stehen in `.gitignore`; die CI schlägt an, falls eine davon doch
+eingecheckt wird.
 
-**Voraussetzung auf dem Server:** SSH-Zugang und `rsync`. Fehlt `rsync`, bricht
-der Deploy mit `rsync: command not found` ab.
+### Einmalig auf dem Server
 
-Die zweite Pipeline (`deploy.yml`) veröffentlicht `docs/` als Vorschauseite auf
-GitHub Pages und hat mit dem Server nichts zu tun.
+1. **`config.local.php` anlegen** — im Plesk-Dateimanager
+   `config.local.example.php` kopieren, in `config.local.php` umbenennen und den
+   Hash eintragen. Erzeugen lässt er sich im SSH-Terminal von Plesk:
+   `php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"`.
+   Ohne Hash antwortet die Seite mit HTTP 503.
+2. **Plesk-Platzhalter** — das `index.html` („Hier entsteht eine neue Webseite")
+   stört nicht mehr, `.htaccess` setzt `DirectoryIndex index.php`. Löschen
+   schadet trotzdem nicht.
+3. **`storage/` beschreibbar** — bei Plesk der Normalfall, weil PHP als
+   Abonnement-Benutzer läuft.
+
+Die Pipeline `deploy.yml` veröffentlicht `docs/` als Vorschauseite auf GitHub
+Pages und hat mit dem Server nichts zu tun.
 
 ## CI
 
@@ -345,13 +240,14 @@ Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
 | Schritt | Was wird geprüft |
 |---|---|
 | **PHP-Syntax** | `php -l` für alle `*.php`-Dateien |
-| **data.json** | Datei muss gültiges JSON sein |
+| **data.json nicht eingecheckt** | Sonst setzte jeder Deploy die Kurzlinks zurück |
 | **.htaccess** | `RewriteEngine`, `Options -Indexes` und Datei-Schutz vorhanden |
 | **storage/.htaccess** | `Require all denied` — kein HTTP-Direktzugriff auf Datenspeicher |
 | **Pflichtdateien** | Alle Kerndateien inkl. Schriften und Stylesheet müssen committed sein |
 | **Kein Dritt-CDN** | Keine Referenz auf `fonts.googleapis.com` / `fonts.gstatic.com` |
 | **Keine inline-Styles** | Kein `style="…"` — die CSP (`style-src 'self'`) würde es verwerfen |
-| **Fail-closed** | `requireAuth()` lässt ohne Hash keine Fremd-IP durch |
+| **Fail-closed** | `requireAuth()` lässt ohne Hash niemanden durch, auch nicht `127.0.0.1` |
+| **Keine Inline-Handler** | Kein `onsubmit="…"` o. ä. — die CSP würde ihn still ignorieren |
 | **Dateischutz** | `.htaccess` sperrt `config.php`, `config.local.php` und `functions.php` |
 | **Kein Hash im Repo** | `config.local.php` ist weder eingecheckt noch eincheckbar |
 
@@ -360,9 +256,6 @@ Lokal testen:
 ```bash
 # PHP-Syntax aller Dateien prüfen
 for f in *.php; do php -l "$f"; done
-
-# JSON validieren
-python3 -c "import json; json.load(open('storage/data.json'))"
 
 # Fail-closed-Verhalten prüfen (darf nichts ausgeben ausser dem Setup-Hinweis)
 php -r '$_SERVER["REMOTE_ADDR"]="203.0.113.7";

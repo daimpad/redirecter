@@ -1,6 +1,8 @@
 # Serverspezifische Konfiguration — enthält den Passwort-Hash
 config.local.php
 
-# Laufzeitdateien des Datenspeichers
+# Datenspeicher — entsteht beim ersten Kurzlink und existiert nur auf dem
+# Server. Eingecheckt würde jeder Git-Deploy ihn auf {} zurücksetzen.
+storage/data.json
 storage/data.json.lock
 storage/data.json.tmp.*

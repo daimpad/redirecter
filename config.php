@@ -33,6 +33,6 @@ defined('RATE_LIMIT_MAX') || define('RATE_LIMIT_MAX', 10);
 
 // Admin-Zugangsdaten für HTTP Basic Auth
 // Hash erzeugen: php -r "echo password_hash('deinPasswort', PASSWORD_BCRYPT);"
-// Leer = nur über localhost erreichbar, von außen HTTP 503
+// Leer = Formular und Verwaltung antworten mit HTTP 503
 defined('ADMIN_USER')          || define('ADMIN_USER', 'admin');
 defined('ADMIN_PASSWORD_HASH') || define('ADMIN_PASSWORD_HASH', '');

@@ -61,6 +61,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($slug === '') {
                 $flash['error'] = 'Der Slug enthält keine gültigen Zeichen.';
+            } elseif (file_exists(__DIR__ . '/' . $slug)) {
+                // .htaccess liefert vorhandene Dateien und Ordner direkt aus —
+                // ein Slug wie "assets" oder "storage" wäre nie erreichbar.
+                $flash['error'] = 'Dieser Slug ist reserviert. Bitte einen anderen wählen.';
             } else {
                 $writeError = saveData($slug, $rawUrl);
 

@@ -238,32 +238,24 @@ function generateSlug(): string
     return $result;
 }
 
-/** Läuft die Anfrage über Loopback, also lokale Entwicklung? */
-function isLocalRequest(): bool
-{
-    return in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
-}
-
 /**
- * Erzwingt HTTP Basic Auth anhand der Werte aus config.php.
+ * Erzwingt HTTP Basic Auth anhand der Werte aus config.php / config.local.php.
  *
  * Ohne ADMIN_PASSWORD_HASH wird der Zugang gesperrt, nicht geöffnet: eine
  * ungeschützte Installation wäre ein offenes Relay, über das Fremde beliebige
- * Weiterleitungen auf der eigenen Domain anlegen könnten. Nur über Loopback
- * bleibt das Formular ohne Hash erreichbar, damit lokale Entwicklung ohne
- * Setup funktioniert.
+ * Weiterleitungen auf der eigenen Domain anlegen könnten. Das gilt ausnahmslos,
+ * auch für 127.0.0.1 — hinter einem Proxy (bei Plesk sitzt nginx vor Apache)
+ * kann jede Anfrage von dort zu kommen scheinen.
  */
 function requireAuth(): void
 {
     if (ADMIN_PASSWORD_HASH === '') {
-        if (isLocalRequest()) {
-            return;
-        }
         http_response_code(503);
         header('Content-Type: text/plain; charset=UTF-8');
         exit(
             "Setup unvollständig: ADMIN_PASSWORD_HASH ist nicht gesetzt.\n\n"
-            . "Hash erzeugen und in config.php eintragen:\n"
+            . "config.local.example.php nach config.local.php kopieren und dort\n"
+            . "den Hash eintragen. Erzeugen mit:\n"
             . "  php -r \"echo password_hash('deinPasswort', PASSWORD_BCRYPT);\"\n"
         );
     }
