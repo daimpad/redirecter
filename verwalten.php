@@ -76,7 +76,7 @@ header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin');
 header(
     "Content-Security-Policy: default-src 'none'; "
-    . "style-src 'self'; font-src 'self'; img-src 'self' data:; "
+    . "style-src 'self'; font-src 'self'; script-src 'self'; img-src 'self' data:; "
     . "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 );
 ?>
@@ -150,7 +150,7 @@ header(
                             <td class="col-date"><?= $e(entryCreated($entry)) ?></td>
                             <td class="col-act">
                                 <form method="POST" action=""
-                                      onsubmit="return confirm('Kurzlink «<?= $e($slug) ?>» wirklich löschen?')">
+                                      data-confirm="Kurzlink «<?= $e($slug) ?>» wirklich löschen?">
                                     <input type="hidden" name="csrf_token" value="<?= $e($csrfToken) ?>">
                                     <input type="hidden" name="slug" value="<?= $e($slug) ?>">
                                     <button type="submit" class="btn-del">Löschen</button>
@@ -176,5 +176,6 @@ header(
     </a>
 </footer>
 
+<script src="assets/app.js" defer></script>
 </body>
 </html>

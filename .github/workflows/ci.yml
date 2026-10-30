@@ -22,11 +22,16 @@ jobs:
           [ "$errors" -eq 0 ] || exit 1
           echo "✓ PHP-Syntax fehlerfrei"
 
-      - name: data.json — gültiges JSON
+      # Der Server holt sich main per Git. Läge data.json im Repository,
+      # setzte jeder Deploy die Kurzlinks auf {} zurück.
+      - name: storage/data.json nicht eingecheckt
         run: |
           set -e
-          python3 -c "import json; json.load(open('storage/data.json'))"
-          echo "✓ data.json ist gültiges JSON"
+          if git ls-files --error-unmatch storage/data.json >/dev/null 2>&1; then
+            echo "✗ storage/data.json liegt im Repository — jeder Deploy würde die Links zurücksetzen"
+            exit 1
+          fi
+          echo "✓ Datenspeicher bleibt serverseitig"
 
       - name: .htaccess — Sicherheitsregeln vorhanden
         run: |
@@ -78,7 +83,6 @@ jobs:
             index.php \
             redirect.php \
             storage/.htaccess \
-            storage/data.json \
             verwalten.php \
             config.local.example.php \
             assets/app.js \
@@ -117,14 +121,29 @@ jobs:
           fi
           echo "✓ keine inline-style-Attribute"
 
+      # Ausdrücklich auch 127.0.0.1: hinter dem nginx-Proxy von Plesk kann
+      # jede Anfrage von dort zu kommen scheinen.
       - name: Auth ist fail-closed
         run: |
           set -e
-          php -r '
-            $_SERVER["REMOTE_ADDR"] = "203.0.113.7";
-            require "config.php"; require "functions.php";
-            requireAuth();
-            fwrite(STDERR, "✗ requireAuth() lässt ohne Hash eine Fremd-IP durch\n");
-            exit(1);
-          ' > /dev/null
-          echo "✓ Ohne ADMIN_PASSWORD_HASH bleibt der Zugang von außen gesperrt"
+          for ip in 203.0.113.7 127.0.0.1 ::1; do
+            REMOTE=$ip php -r '
+              $_SERVER["REMOTE_ADDR"] = getenv("REMOTE");
+              require "config.php"; require "functions.php";
+              requireAuth();
+              fwrite(STDERR, "✗ requireAuth() lässt ohne Hash " . getenv("REMOTE") . " durch\n");
+              exit(1);
+            ' > /dev/null
+          done
+          echo "✓ Ohne ADMIN_PASSWORD_HASH bleibt der Zugang gesperrt, auch über Loopback"
+
+      # Die CSP erlaubt kein Inline-JavaScript. Ein onsubmit-/onclick-Attribut
+      # würde still ignoriert — so fiel einmal die Lösch-Rückfrage weg.
+      - name: Keine Inline-Event-Handler
+        run: |
+          set -e
+          if grep -rnE '\son[a-z]+="' --include='*.php' .; then
+            echo "✗ Inline-Handler gefunden — die CSP blockiert ihn; Logik nach assets/app.js"
+            exit 1
+          fi
+          echo "✓ keine Inline-Event-Handler"

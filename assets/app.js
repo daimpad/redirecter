@@ -58,4 +58,16 @@
             img.removeAttribute('data-qr');
         });
     }
+
+    // Rückfrage vor dem Löschen. Steht hier statt als onsubmit-Attribut im
+    // HTML, weil die CSP Inline-Handler blockiert — der Dialog fiel sonst
+    // stillschweigend weg und ein Klick löschte sofort.
+    var forms = document.querySelectorAll('form[data-confirm]');
+    for (var i = 0; i < forms.length; i++) {
+        forms[i].addEventListener('submit', function (ev) {
+            if (!window.confirm(this.getAttribute('data-confirm'))) {
+                ev.preventDefault();
+            }
+        });
+    }
 })();
