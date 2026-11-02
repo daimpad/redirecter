@@ -6,3 +6,6 @@ config.local.php
 storage/data.json
 storage/data.json.lock
 storage/data.json.tmp.*
+
+# Lokaler Bau der Spielwiese (.github/build-demo.sh)
+_site/

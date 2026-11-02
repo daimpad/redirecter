@@ -121,11 +121,52 @@ Rufe `https://deinedomain.de/` auf. Das Formular hat zwei Felder:
 
 Bleibt der Slug leer, wird ein zufälliger 6-stelliger Base62-String generiert (~56 Milliarden mögliche Werte).
 
+### Was beim Bedienen passiert — und warum
+
+Die Oberfläche soll Spaß machen, ohne zu stören. Jede Rückmeldung folgt einem
+UX-Prinzip; nichts davon ist nötig, damit der Redirecter funktioniert. Ohne
+JavaScript bleibt alles bei normalen Formularen, und wer im Betriebssystem
+„Bewegung reduzieren" eingestellt hat, bekommt die Rückmeldung ohne Wackeln,
+Hüpfen und Konfetti.
+
+| Was passiert | Prinzip |
+|---|---|
+| Eine gültige Ziel-URL wird sofort mit ✓ und ihrem Host bestätigt; Unfertiges wird erst beim Verlassen des Feldes angemahnt | Früh loben, spät meckern |
+| `nozilla.de/x` wird zu `https://nozilla.de/x` ergänzt, statt abgelehnt zu werden | Fehlertoleranz |
+| Umlaute, `&` und Leerzeichen im Slug werden beim Tippen übersetzt (`Kurz & gut` → `Kurz-und-gut`) | Fehler vermeiden statt melden |
+| Unter dem Slug-Feld steht live der fertige Link | Sichtbarkeit, das Ergebnis vor Augen |
+| Der Würfel erzeugt aussprechbare Slugs (`dani-vira`) — merkbar und diktierbar | Spieltrieb mit Nutzen |
+| Der Knopf zeigt einen Ladezustand und lässt sich nicht doppelt auslösen | Systemstatus, Fehlervermeidung |
+| Erfolg: Die Karte wird aufgestempelt, Konfetti in 6 × 6 (die Marke aus den nozilla-Icons), der grüne Punkt im Kopf hüpft, der Zähler rollt | Peak-End-Regel |
+| Danach liegt der Fokus auf „Kopieren" | Der nächste Schritt liegt schon bereit |
+| Fehler stehen direkt am Feld, der Inhalt ist markiert; die Karte schüttelt kurz den Kopf | Fehler erkennen und beheben |
+| Löschen geschieht sofort, fünf Sekunden lang mit „Rückgängig" | Rückgängig statt Rückfrage |
+| Filterfeld und Klick-Balken in der Verwaltung | Wiedererkennen statt Erinnern |
+
+**Tastenkürzel** — angezeigt nur, wo es eine Tastatur gibt:
+
+| Taste | Wirkung |
+|---|---|
+| `/` | ins URL- bzw. Filterfeld |
+| `↵` | Kurzlink erstellen |
+| `C` | Ergebnis kopieren |
+| `Esc` | Ergebnis schließen, neu anfangen |
+| `Strg`/`⌘` + `Z` | Löschen rückgängig machen |
+| `?` | Übersicht der Tasten |
+
+Das Formular schickt per `fetch` ab und bekommt JSON zurück (`Accept:
+application/json`), damit die Animationen ohne Neuladen durchlaufen. Ohne
+JavaScript bleibt es beim klassischen Post/Redirect/Get.
+
 ### Kurzlinks verwalten
 
 `verwalten.php` listet alle Kurzlinks mit Slug, Ziel-URL, Klick-Zähler und
-Erstelldatum — neueste zuerst. Jeder Eintrag lässt sich per „Löschen" entfernen
-(mit Bestätigungsdialog). Erreichbar über den Link unter dem Formular.
+Erstelldatum — neueste zuerst. Erreichbar über den Link unter dem Formular.
+
+Löschen geschieht ohne Rückfrage, dafür fünf Sekunden lang mit „Rückgängig"
+(oder `Strg`/`⌘` + `Z`). Erst danach geht die Anfrage an den Server. Wer die
+Seite in dieser Zeit verlässt, hat sich entschieden: Die Löschung wird dann per
+`sendBeacon` nachgereicht.
 
 Die Seite liegt hinter demselben Passwortschutz wie das Formular und trägt
 `noindex, nofollow`. Löschen läuft CSRF-geschützt und über einen 303-Redirect,
@@ -180,14 +221,14 @@ apt install php-apcu
 |---|---|
 | **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.local.php` |
 | **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — ohne Ausnahme |
-| **Repo-Dateien** | `README.md`, `docs/`, `.github/` liefert `.htaccess` nicht aus (HTTP 404), obwohl Plesk sie in den Web-Root legt |
+| **Repo-Dateien** | `README.md`, `.gitignore`, `.github/` liefert `.htaccess` nicht aus (HTTP 404), obwohl Plesk sie in den Web-Root legt |
 | **Reservierte Slugs** | Slugs, die wie eine vorhandene Datei oder ein Ordner heißen (`assets`, `storage` …), werden abgelehnt — sie wären nie erreichbar |
 | **Post/Redirect/Get** | Erfolg und Fehler laufen über einen 303-Redirect; ein Reload sendet nichts erneut ab |
 | **Kein Dritt-CDN** | Schriften selbst gehostet, CSP ohne externe Hosts (`default-src 'none'`); der QR-Dienst wird erst auf Klick kontaktiert |
 | **CSP ohne `unsafe-inline`** | Styles und Skripte liegen in eigenen Dateien (`style-src 'self'`, `script-src 'self'`) |
 | **Timing-sichere Auth** | `hash_equals()` für Benutzername + `password_verify()` immer ausgeführt (kein Short-Circuit, der Username-Enumeration via Timing ermöglicht) |
 | **Rate Limiting** | Max. `RATE_LIMIT_MAX` Link-Erstellungen/Minute/IP; atomares `apcu_add`+`apcu_inc` (kein TOCTOU), Session als Fallback |
-| **CSRF-Schutz** | Session-Token wird vor dem POST-Handler initialisiert; explizite Leer-Prüfung verhindert `hash_equals('','')` Bypass |
+| **CSRF-Schutz** | Ein Token pro Sitzung, vor dem POST-Handler initialisiert; explizite Leer-Prüfung verhindert `hash_equals('','')` Bypass. Bewusst nicht pro Seitenaufruf erneuert: Das machte Formulare in anderen Tabs ungültig und ließ eine beim Verlassen nachgereichte Löschung scheitern |
 | **Atomare Schreibvorgänge** | Schreiben in Temp-Datei + `rename()` — kein Datenverlust bei Disk-Full, Leser sehen immer eine vollständige Datei |
 | **Lock-Datei** | `data.json.lock` als stabiles Lock-Inode — verhindert Lock-Splitting beim Umbenennen der Datendatei |
 | **Slug-Sanitizing** | Nur `[A-Za-z0-9_-]` erlaubt — Sonderzeichen werden entfernt |
@@ -230,8 +271,20 @@ eingecheckt wird.
 3. **`storage/` beschreibbar** — bei Plesk der Normalfall, weil PHP als
    Abonnement-Benutzer läuft.
 
-Die Pipeline `deploy.yml` veröffentlicht `docs/` als Vorschauseite auf GitHub
-Pages und hat mit dem Server nichts zu tun.
+### Spielwiese auf GitHub Pages
+
+`deploy.yml` veröffentlicht eine spielbare Fassung des Formulars auf GitHub
+Pages. Sie wird bei jedem Push von `.github/build-demo.sh` aus `index.php`
+gerendert und in den Demo-Modus geschaltet: `assets/app.js` spielt dann die
+Antworten des Servers nach, gespeichert wird nichts. Eine eingecheckte Kopie
+gibt es nicht, die Spielwiese kann der echten Seite also nicht davonlaufen.
+Lokal bauen:
+
+```bash
+.github/build-demo.sh _site    # danach z. B.: python3 -m http.server -d _site
+```
+
+Mit dem Server hat die Spielwiese nichts zu tun.
 
 ## CI
 
@@ -247,6 +300,7 @@ Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
 | **Kein Dritt-CDN** | Keine Referenz auf `fonts.googleapis.com` / `fonts.gstatic.com` |
 | **Keine inline-Styles** | Kein `style="…"` — die CSP (`style-src 'self'`) würde es verwerfen |
 | **Fail-closed** | `requireAuth()` lässt ohne Hash niemanden durch, auch nicht `127.0.0.1` |
+| **Spielwiese baut** | `.github/build-demo.sh` läuft durch, Ergebnis im Demo-Modus und ohne CSRF-Token |
 | **Keine Inline-Handler** | Kein `onsubmit="…"` o. ä. — die CSP würde ihn still ignorieren |
 | **Dateischutz** | `.htaccess` sperrt `config.php`, `config.local.php` und `functions.php` |
 | **Kein Hash im Repo** | `config.local.php` ist weder eingecheckt noch eincheckbar |

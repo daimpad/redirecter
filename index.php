@@ -15,7 +15,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// CSRF-Token vor der POST-Behandlung anlegen, sonst würde hash_equals('','') greifen
+// CSRF-Token vor der POST-Behandlung anlegen, sonst würde hash_equals('','') greifen.
+// Ein Token pro Sitzung, nicht pro Seitenaufruf: Ein neues bei jedem Aufruf
+// machte Formulare in anderen Tabs ungültig — und eine Löschung, die beim
+// Verlassen der Verwaltung noch per sendBeacon nachgereicht wird, käme erst
+// nach dem Aufruf der nächsten Seite an und würde abgelehnt.
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -24,8 +28,14 @@ if (empty($_SESSION['csrf_token'])) {
 // REQUEST_URI ist clientkontrolliert und könnte als "//fremde-domain" ankommen.
 $selfPath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/';
 
+// app.js schickt das Formular per fetch und will JSON zurück, damit die
+// Erfolgsanimation ohne Neuladen durchlaufen kann. Ohne JavaScript bleibt es
+// beim klassischen Post/Redirect/Get.
+$wantsJson = str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json');
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $flash = ['error' => '', 'success' => '', 'url' => '', 'slug' => ''];
+    // 'field' sagt, zu welchem Eingabefeld ein Fehler gehört (url, slug oder leer)
+    $flash = ['error' => '', 'field' => '', 'success' => '', 'url' => '', 'slug' => ''];
 
     $token = $_POST['csrf_token'] ?? '';
     if ($token === '' || !hash_equals($_SESSION['csrf_token'], $token)) {
@@ -39,8 +49,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($rawUrl === '') {
             $flash['error'] = 'Bitte eine Ziel-URL angeben.';
+            $flash['field'] = 'url';
         } elseif (!filter_var($rawUrl, FILTER_VALIDATE_URL) || !preg_match('/^https?:\/\//i', $rawUrl)) {
             $flash['error'] = 'Bitte eine gültige HTTP/HTTPS-URL eingeben.';
+            $flash['field'] = 'url';
         } elseif (!checkRateLimit()) {
             // Erst hier prüfen: ein Tippfehler soll kein Kontingent verbrauchen.
             $flash['error'] = 'Zu viele Anfragen. Bitte warte eine Minute.';
@@ -61,10 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($slug === '') {
                 $flash['error'] = 'Der Slug enthält keine gültigen Zeichen.';
+                $flash['field'] = 'slug';
             } elseif (file_exists(__DIR__ . '/' . $slug)) {
                 // .htaccess liefert vorhandene Dateien und Ordner direkt aus —
                 // ein Slug wie "assets" oder "storage" wäre nie erreichbar.
                 $flash['error'] = 'Dieser Slug ist reserviert. Bitte einen anderen wählen.';
+                $flash['field'] = 'slug';
             } else {
                 $writeError = saveData($slug, $rawUrl);
 
@@ -77,6 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($writeError === 'SLUG_EXISTS') {
                     $flash['error'] = 'Dieser Slug ist bereits vergeben. Bitte einen anderen wählen.';
+                    $flash['field'] = 'slug';
                 } elseif ($writeError !== null) {
                     $flash['error'] = 'Speicherfehler: ' . $writeError;
                 } else {
@@ -86,6 +101,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    }
+
+    if ($wantsJson) {
+        header('Content-Type: application/json; charset=UTF-8');
+        header('Cache-Control: no-store');
+        echo json_encode([
+            'ok'    => $flash['success'] !== '',
+            'short' => $flash['success'],
+            'error' => $flash['error'],
+            'field' => $flash['field'],
+            'count' => count(loadData()),
+            'csrf'  => $_SESSION['csrf_token'],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
     }
 
     // Post/Redirect/Get: ohne diesen Umweg löst jedes F5 ein erneutes Absenden
@@ -99,14 +128,38 @@ $flash = $_SESSION['flash'] ?? [];
 unset($_SESSION['flash']);
 
 $error      = (string)($flash['error']   ?? '');
+$errorField = (string)($flash['field']   ?? '');
 $successRaw = (string)($flash['success'] ?? '');
 $formUrl    = (string)($flash['url']     ?? '');
 $formSlug   = (string)($flash['slug']    ?? '');
 
-$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 $csrfToken = $_SESSION['csrf_token'];
 
+$linkCount = count(loadData());
+$baseHost  = preg_replace('#^https?://#i', '', rtrim(BASE_URL, '/'));
+
 $e = static fn (string $s): string => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+
+// Ergebnis-Karte. Wird nach einem klassischen POST direkt gerendert und steckt
+// leer im <template>, aus dem app.js sie nach einem fetch-POST befüllt — so
+// gibt es das Markup nur einmal.
+$renderResult = static function (string $short) use ($e): void {
+    $qr = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' . rawurlencode($short);
+    ?>
+    <div class="alert alert-success result-card" role="status">
+        <span class="label">Kurzlink erstellt</span>
+        <div class="result">
+            <a class="result-link" href="<?= $e($short) ?>" target="_blank" rel="noopener"><?= $e($short) ?></a>
+            <button type="button" class="copy" data-copy="<?= $e($short) ?>"><span class="copy-label">Kopieren</span> <kbd class="kbd-hint" aria-hidden="true">C</kbd></button>
+        </div>
+        <details class="qr">
+            <summary>QR-Code anzeigen</summary>
+            <img alt="QR-Code für den Kurzlink" width="140" height="140"
+                 referrerpolicy="no-referrer" data-qr="<?= $e($qr) ?>">
+        </details>
+    </div>
+    <?php
+};
 
 header('Content-Type: text/html; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
@@ -114,7 +167,7 @@ header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin');
 header(
     "Content-Security-Policy: default-src 'none'; "
-    . "style-src 'self'; font-src 'self'; script-src 'self'; "
+    . "style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self'; "
     . "img-src 'self' data: https://api.qrserver.com; "
     . "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 );
@@ -134,32 +187,22 @@ header(
 <body>
 
 <header>
-    <h1>Redirecter</h1>
+    <h1>Redirecter<span class="dot" aria-hidden="true"></span></h1>
 </header>
 
 <main>
     <div class="card">
-        <?php if ($error !== ''): ?>
+        <?php if ($error !== '' && $errorField === ''): ?>
             <div class="alert alert-error" role="alert"><?= $e($error) ?></div>
         <?php endif; ?>
 
-        <?php if ($successRaw !== ''): ?>
-            <div class="alert alert-success" role="alert">
-                <span class="label">Kurzlink erstellt</span>
-                <div class="result">
-                    <a href="<?= $e($successRaw) ?>" target="_blank" rel="noopener"><?= $e($successRaw) ?></a>
-                    <button type="button" class="copy" data-copy="<?= $e($successRaw) ?>">Kopieren</button>
-                </div>
-                <details class="qr">
-                    <summary>QR-Code anzeigen</summary>
-                    <img alt="QR-Code für <?= $e($successRaw) ?>" width="140" height="140"
-                         referrerpolicy="no-referrer"
-                         data-qr="https://api.qrserver.com/v1/create-qr-code/?size=140x140&amp;data=<?= rawurlencode($successRaw) ?>">
-                </details>
-            </div>
-        <?php endif; ?>
+        <div class="result-slot">
+            <?php if ($successRaw !== ''): ?>
+                <?php $renderResult($successRaw); ?>
+            <?php endif; ?>
+        </div>
 
-        <form method="POST" action="">
+        <form method="POST" action="" data-base="<?= $e($baseHost) ?>" data-max="<?= SLUG_MAX_LEN ?>">
             <input type="hidden" name="csrf_token" value="<?= $e($csrfToken) ?>">
 
             <div class="field">
@@ -167,24 +210,42 @@ header(
                 <input type="url" id="url" name="url"
                        placeholder="https://example.com/langer/pfad"
                        required autocomplete="off" autofocus
+                       aria-describedby="url-status"
+                       <?= $errorField === 'url' ? 'class="is-invalid" aria-invalid="true"' : '' ?>
                        value="<?= $e($formUrl) ?>">
+                <p class="field-status" id="url-status" aria-live="polite"><?php if ($errorField === 'url'): ?><span class="field-error"><?= $e($error) ?></span><?php endif; ?></p>
             </div>
 
             <div class="field">
                 <label for="slug">Wunsch-Slug <span class="opt">(optional)</span></label>
-                <input type="text" id="slug" name="slug"
-                       placeholder="mein-link"
-                       maxlength="<?= SLUG_MAX_LEN ?>"
-                       autocomplete="off" pattern="[A-Za-z0-9_\-]+"
-                       value="<?= $e($formSlug) ?>">
-                <p class="hint">Erlaubt: Buchstaben, Ziffern, <code>-</code> und <code>_</code>. Leer lassen für automatische Generierung.</p>
+                <div class="slug-row">
+                    <input type="text" id="slug" name="slug"
+                           placeholder="mein-link"
+                           maxlength="<?= SLUG_MAX_LEN ?>"
+                           autocomplete="off" pattern="[A-Za-z0-9_\-]+"
+                           aria-describedby="slug-status slug-hint"
+                           <?= $errorField === 'slug' ? 'class="is-invalid" aria-invalid="true"' : '' ?>
+                           value="<?= $e($formSlug) ?>">
+                    <button type="button" class="dice" aria-label="Zufälligen Slug würfeln" title="Würfeln" hidden>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20"/><rect class="pip" x="5.5" y="5.5" width="4" height="4"/><rect class="pip" x="14.5" y="5.5" width="4" height="4"/><rect class="pip" x="10" y="10" width="4" height="4"/><rect class="pip" x="5.5" y="14.5" width="4" height="4"/><rect class="pip" x="14.5" y="14.5" width="4" height="4"/></svg>
+                    </button>
+                </div>
+                <p class="preview" hidden><span class="preview-host"><?= $e($baseHost) ?>/</span><span class="preview-slug"></span></p>
+                <p class="field-status" id="slug-status" aria-live="polite"><?php if ($errorField === 'slug'): ?><span class="field-error"><?= $e($error) ?></span><?php endif; ?></p>
+                <p class="hint" id="slug-hint">Erlaubt: Buchstaben, Ziffern, <code>-</code> und <code>_</code>. Leer lassen für automatische Generierung.</p>
             </div>
 
-            <button type="submit" class="btn">Kurzlink erstellen</button>
+            <button type="submit" class="btn">
+                <span class="btn-label">Kurzlink erstellen</span>
+                <span class="btn-busy" aria-hidden="true"><i></i><i></i><i></i></span>
+                <kbd class="kbd-hint" aria-hidden="true">↵</kbd>
+            </button>
         </form>
 
-        <p class="domain"><?= $e(rtrim(BASE_URL, '/')) ?></p>
+        <p class="domain"><?= $e($baseHost) ?> · <span class="counter" data-count="<?= $linkCount ?>"><?= $linkCount ?></span> <span class="counter-label"><?= $linkCount === 1 ? 'Kurzlink' : 'Kurzlinks' ?></span></p>
         <p class="nav"><a href="verwalten.php">Kurzlinks verwalten →</a></p>
+
+        <template id="tpl-result"><?php $renderResult(''); ?></template>
     </div>
 </main>
 
@@ -196,6 +257,8 @@ header(
         </svg>
     </a>
 </footer>
+
+<div class="toasts" aria-live="polite"></div>
 
 <script src="assets/app.js" defer></script>
 </body>
