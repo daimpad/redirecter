@@ -239,6 +239,35 @@ function generateSlug(): string
 }
 
 /**
+ * Liest Benutzername und Passwort aus der Anfrage.
+ *
+ * Mit mod_php setzt PHP PHP_AUTH_USER/PHP_AUTH_PW selbst. Unter PHP-FPM (bei
+ * Plesk der Normalfall) kommt nur der rohe Header an, und das auch nur dank
+ * der Regel in .htaccess — nach einem internen Rewrite mit REDIRECT_-Präfix.
+ *
+ * @return array{0: string, 1: string}
+ */
+function basicAuthCredentials(): array
+{
+    if (isset($_SERVER['PHP_AUTH_USER'])) {
+        return [(string)$_SERVER['PHP_AUTH_USER'], (string)($_SERVER['PHP_AUTH_PW'] ?? '')];
+    }
+
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (stripos($header, 'Basic ') !== 0) {
+        return ['', ''];
+    }
+
+    $decoded = base64_decode(substr($header, 6), true);
+    if ($decoded === false || !str_contains($decoded, ':')) {
+        return ['', ''];
+    }
+
+    [$user, $pass] = explode(':', $decoded, 2);
+    return [$user, $pass];
+}
+
+/**
  * Erzwingt HTTP Basic Auth anhand der Werte aus config.php / config.local.php.
  *
  * Ohne ADMIN_PASSWORD_HASH wird der Zugang gesperrt, nicht geöffnet: eine
@@ -260,8 +289,7 @@ function requireAuth(): void
         );
     }
 
-    $user = $_SERVER['PHP_AUTH_USER'] ?? '';
-    $pass = $_SERVER['PHP_AUTH_PW']   ?? '';
+    [$user, $pass] = basicAuthCredentials();
 
     // Beide Prüfungen immer ausführen um Timing-Side-Channel zu verhindern
     $validUser = hash_equals(ADMIN_USER, $user);

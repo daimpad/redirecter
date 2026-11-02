@@ -6,6 +6,12 @@ DirectoryIndex index.php
 
 RewriteEngine On
 
+# Plesk betreibt PHP meist als PHP-FPM hinter Apache. Dann reicht Apache den
+# Authorization-Header des Browsers nicht an PHP weiter, und jede Anmeldung
+# scheitert — auch mit richtigem Passwort. Diese Regel gibt ihn mit.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # HTTP → HTTPS
 RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
