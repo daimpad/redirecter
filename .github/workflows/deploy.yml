@@ -1,9 +1,15 @@
-name: Deploy to GitHub Pages
+name: Spielwiese auf GitHub Pages
 
+# Baut die Spielwiese bei jedem Push aus index.php neu — es gibt keine
+# eingecheckte Kopie, die der echten Seite davonlaufen könnte.
 on:
   push:
     branches: [main]
-    paths: ["docs/**"]
+    paths:
+      - "index.php"
+      - "assets/**"
+      - ".github/build-demo.sh"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,13 +31,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Spielwiese bauen
+        run: .github/build-demo.sh _site
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

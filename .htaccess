@@ -12,7 +12,7 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
 # Plesk zieht das ganze Repository in den Web-Root. Was nur ins Repository
 # gehört, soll nicht über HTTP abrufbar sein.
-RewriteRule ^(README\.md|\.gitignore|\.github/|docs/) - [R=404,L]
+RewriteRule ^(README\.md|\.gitignore|\.github/) - [R=404,L]
 
 # Statische Dateien und Verzeichnisse direkt durchlassen
 RewriteCond %{REQUEST_FILENAME} -f [OR]

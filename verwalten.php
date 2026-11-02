@@ -15,6 +15,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Ein Token pro Sitzung — Begründung siehe index.php
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -22,6 +23,10 @@ if (empty($_SESSION['csrf_token'])) {
 // Wie in index.php aus SCRIPT_NAME statt REQUEST_URI — letzteres ist
 // clientkontrolliert und könnte als "//fremde-domain" ankommen.
 $selfPath = ($_SERVER['SCRIPT_NAME'] ?? '/verwalten.php');
+
+// Wie in index.php: app.js löscht per fetch und will JSON, damit Rückgängig
+// ohne Neuladen funktioniert. Ohne JavaScript bleibt es bei Post/Redirect/Get.
+$wantsJson = str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $flash = ['error' => '', 'info' => ''];
@@ -47,6 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($wantsJson) {
+        header('Content-Type: application/json; charset=UTF-8');
+        header('Cache-Control: no-store');
+        echo json_encode([
+            'ok'    => $flash['error'] === '',
+            'error' => $flash['error'],
+            'count' => count(loadData()),
+            'csrf'  => $_SESSION['csrf_token'],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     // Post/Redirect/Get, damit ein Reload nicht erneut zu löschen versucht
     $_SESSION['flash'] = $flash;
     header('Location: ' . $selfPath, true, 303);
@@ -59,7 +76,6 @@ unset($_SESSION['flash']);
 $error = (string)($flash['error'] ?? '');
 $info  = (string)($flash['info']  ?? '');
 
-$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 $csrfToken = $_SESSION['csrf_token'];
 
 $links = loadData();
@@ -76,7 +92,7 @@ header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin');
 header(
     "Content-Security-Policy: default-src 'none'; "
-    . "style-src 'self'; font-src 'self'; script-src 'self'; img-src 'self' data:; "
+    . "style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; "
     . "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 );
 ?>
@@ -95,15 +111,23 @@ header(
 <body>
 
 <header>
-    <h1>Redirecter</h1>
+    <h1>Redirecter<span class="dot" aria-hidden="true"></span></h1>
 </header>
 
 <main class="wide">
     <div class="card">
         <div class="card-head">
             <h2>Kurzlinks</h2>
-            <span class="count"><?= count($links) ?></span>
+            <span class="count counter" data-count="<?= count($links) ?>"><?= count($links) ?></span>
         </div>
+
+        <?php if ($links !== []): ?>
+            <div class="filter-row" hidden>
+                <label class="visually-hidden" for="filter">Kurzlinks filtern</label>
+                <input type="search" id="filter" class="filter" placeholder="Filtern nach Slug oder Ziel …" autocomplete="off">
+                <kbd class="kbd-hint" aria-hidden="true">/</kbd>
+            </div>
+        <?php endif; ?>
 
         <?php if ($error !== ''): ?>
             <div class="alert alert-error" role="alert"><?= $e($error) ?></div>
@@ -113,9 +137,10 @@ header(
             <div class="alert alert-info" role="status"><?= $e($info) ?></div>
         <?php endif; ?>
 
-        <?php if ($links === []): ?>
-            <p class="empty">Noch keine Kurzlinks vorhanden.</p>
-        <?php else: ?>
+        <p class="empty"<?= $links === [] ? '' : ' hidden' ?>>Noch keine Kurzlinks vorhanden.</p>
+        <p class="empty empty-filter" hidden>Keine Treffer.</p>
+
+        <?php if ($links !== []): ?>
             <div class="table-wrap">
                 <table class="links">
                     <thead>
@@ -135,7 +160,7 @@ header(
                             $shortUrl = $base . '/' . $slug;
                             $isHttp   = (bool)preg_match('/^https?:\/\//i', $target);
                         ?>
-                        <tr>
+                        <tr data-slug="<?= $e($slug) ?>" data-target="<?= $e($target) ?>">
                             <td class="col-slug">
                                 <a href="<?= $e($shortUrl) ?>" target="_blank" rel="noopener"><?= $e($slug) ?></a>
                             </td>
@@ -149,10 +174,10 @@ header(
                             <td class="col-hits"><?= entryHits($entry) ?></td>
                             <td class="col-date"><?= $e(entryCreated($entry)) ?></td>
                             <td class="col-act">
-                                <form method="POST" action=""
-                                      data-confirm="Kurzlink «<?= $e($slug) ?>» wirklich löschen?">
+                                <form method="POST" action="" class="del-form">
                                     <input type="hidden" name="csrf_token" value="<?= $e($csrfToken) ?>">
                                     <input type="hidden" name="slug" value="<?= $e($slug) ?>">
+                                    <button type="button" class="btn-row copy" data-copy="<?= $e($shortUrl) ?>" hidden><span class="copy-label">Kopieren</span></button>
                                     <button type="submit" class="btn-del">Löschen</button>
                                 </form>
                             </td>
@@ -175,6 +200,8 @@ header(
         </svg>
     </a>
 </footer>
+
+<div class="toasts" aria-live="polite"></div>
 
 <script src="assets/app.js" defer></script>
 </body>

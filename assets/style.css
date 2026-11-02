@@ -42,6 +42,10 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* hidden muss gewinnen, auch gegen display-Regeln einzelner Komponenten —
+   sonst tauchten JS-only-Elemente wie der Würfel ohne JavaScript auf. */
+[hidden] { display: none !important; }
+
 /* Für Screenreader da, visuell nicht */
 .visually-hidden {
     position: absolute;
@@ -386,8 +390,289 @@ footer a:hover { color: var(--nz-ink); background: var(--nz-signal); }
 
 .gh svg { display: block; width: 18px; height: 18px; fill: currentColor; }
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Juice — Rückmeldung, die Spaß macht.
+   Alles nach CI: harte Kanten, harte Schatten, kein Blur, kein Verlauf.
+   Bewegung federt (--nz-spring) oder rastet ein (steps), nie weich-schwammig.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+    --nz-spring: cubic-bezier(.34, 1.56, .64, 1);
+    --nz-signal-soft: #B7FFE0;
+}
+
+/* Signatur-Punkt: der grüne Schlusspunkt aus der Wortmarke. Hüpft bei Erfolg. */
+header h1 .dot {
+    display: inline-block;
+    width: .2em;
+    height: .2em;
+    margin-left: .06em;
+    background: var(--nz-signal);
+    transform-origin: 50% 100%;
+}
+.dot.is-hop { animation: nz-hop 620ms var(--nz-ease); }
+@keyframes nz-hop {
+    0%   { transform: none; }
+    30%  { transform: translateY(-.6em) rotate(90deg); }
+    60%  { transform: translateY(0) rotate(180deg); }
+    72%  { transform: scale(1.35, .65); }
+    86%  { transform: scale(.9, 1.1); }
+    100% { transform: none; }
+}
+
+/* Statuszeile unter einem Feld. Mit JS reserviert sie ihre Höhe, damit das
+   Formular nicht springt, wenn eine Meldung auftaucht. */
+.field-status { font-family: var(--nz-f-mono); font-size: .72rem; line-height: 1.4; margin-top: .4rem; }
+.field-status:empty { margin-top: 0; }
+.js .field-status { min-height: 1.4em; }
+.js .field-status:empty { margin-top: .4rem; }
+.field-ok    { color: var(--nz-ink); }
+.field-ok::before    { content: "✓ "; color: var(--nz-ink); background: var(--nz-signal); padding: 0 .2em; margin-right: .2em; }
+.field-note  { color: var(--nz-ink-70); }
+.field-error { color: var(--nz-ink); }
+.field-error::before { content: "✕"; color: #fff; background: var(--nz-danger); padding: 0 .3em; margin-right: .4em; }
+
+input.is-valid   { box-shadow: 3px 3px 0 0 var(--nz-signal); }
+input.is-invalid { border-color: var(--nz-danger); box-shadow: 3px 3px 0 0 var(--nz-danger); }
+input.is-fixed   { animation: nz-fixed 420ms var(--nz-ease); }
+@keyframes nz-fixed { 0% { background: var(--nz-signal-soft); } 100% { background: var(--nz-bg); } }
+
+.is-pop   { animation: nz-pop 300ms var(--nz-spring); }
+@keyframes nz-pop { 0% { transform: scale(1); } 40% { transform: scale(1.04); } 100% { transform: scale(1); } }
+
+/* Fehler: die Karte schüttelt den Kopf. Lineare Schritte, kein Federn. */
+.is-shake { animation: nz-shake 380ms linear; }
+@keyframes nz-shake {
+    0%, 100% { transform: none; }
+    15% { transform: translateX(-9px); }
+    30% { transform: translateX(8px); }
+    45% { transform: translateX(-6px); }
+    60% { transform: translateX(5px); }
+    75% { transform: translateX(-2px); }
+}
+
+/* Slug-Feld mit Würfel */
+.slug-row { display: flex; gap: .5rem; }
+.slug-row input { flex: 1; min-width: 0; }
+.dice {
+    flex: none;
+    width: 2.9rem;
+    display: grid;
+    place-items: center;
+    background: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    box-shadow: var(--nz-shadow-sm);
+    cursor: pointer;
+    transition: transform var(--nz-dur) var(--nz-ease),
+                box-shadow var(--nz-dur) var(--nz-ease),
+                background var(--nz-dur) var(--nz-ease);
+}
+.dice svg { width: 1.45rem; height: 1.45rem; fill: none; stroke: var(--nz-ink); stroke-width: 2.5; }
+.dice svg .pip { fill: var(--nz-ink); stroke: none; }
+/* Nur mit echter Maus: auf Touch-Geräten bliebe :hover nach dem Antippen kleben */
+@media (hover: hover) {
+    .dice:hover { background: var(--nz-signal); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 0 var(--nz-ink); }
+}
+.dice:active { transform: translate(3px, 3px); box-shadow: none; }
+.dice:focus-visible { outline: 3px solid var(--nz-ink); outline-offset: 3px; }
+/* steps(4): der Würfel kippt in Vierteldrehungen, statt zu kreiseln */
+.dice svg.is-rolling { animation: nz-roll 440ms steps(4) 1; }
+@keyframes nz-roll { to { transform: rotate(360deg); } }
+
+/* Live-Vorschau des Kurzlinks */
+.preview {
+    margin-top: .6rem;
+    padding: .45rem .6rem;
+    border: var(--nz-stroke-hair) dashed var(--nz-ink-20);
+    font-family: var(--nz-f-mono);
+    font-size: .8rem;
+    overflow-wrap: anywhere;
+    color: var(--nz-ink-70);
+}
+.preview-slug { color: var(--nz-ink); font-weight: 700; }
+.preview-slug .ch { display: inline-block; white-space: pre; }
+.preview-slug .ch.is-in { animation: nz-drop 220ms var(--nz-spring); }
+@keyframes nz-drop { from { transform: translateY(-.6em); opacity: 0; } }
+.preview-slug .ph { font-weight: 400; color: var(--nz-ink-70); }
+.preview.is-changed { border-color: var(--nz-ink); border-style: solid; }
+
+/* Absende-Knopf: bereit, beschäftigt, gestempelt */
+.btn { display: flex; align-items: center; justify-content: center; gap: .7rem; }
+.btn.is-ready { animation: nz-ready 520ms var(--nz-spring); }
+@keyframes nz-ready {
+    0%   { transform: none; box-shadow: var(--nz-shadow-sm); }
+    45%  { transform: translate(-3px, -3px); box-shadow: 7px 7px 0 0 var(--nz-ink); }
+    100% { transform: none; box-shadow: var(--nz-shadow-sm); }
+}
+.btn-busy { display: none; gap: 5px; }
+.btn-busy i { width: 7px; height: 7px; background: var(--nz-ink); animation: nz-blink 720ms steps(1) infinite; }
+.btn-busy i:nth-child(2) { animation-delay: 240ms; }
+.btn-busy i:nth-child(3) { animation-delay: 480ms; }
+@keyframes nz-blink { 0% { opacity: 1; } 33% { opacity: .15; } }
+.btn.is-busy { cursor: progress; transform: translate(3px, 3px); box-shadow: none; }
+.btn.is-busy .btn-label,
+.btn.is-busy .kbd-hint { display: none; }
+.btn.is-busy .btn-busy { display: inline-flex; }
+
+/* Ergebnis: wird aufgestempelt */
+.result-card.is-in { animation: nz-stamp 460ms var(--nz-spring); }
+@keyframes nz-stamp {
+    0%   { transform: scale(1.14) rotate(-2.5deg); box-shadow: 14px 14px 0 0 var(--nz-ink); opacity: 0; }
+    35%  { opacity: 1; }
+    100% { transform: none; box-shadow: var(--nz-shadow-sm); }
+}
+.copy.is-done { background: var(--nz-signal); }
+
+/* Tastenkürzel, nur dort, wo es eine Tastatur gibt */
+kbd.kbd-hint {
+    font-family: var(--nz-f-mono);
+    font-size: .64rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: .2em .4em;
+    border: var(--nz-stroke-hair) solid currentColor;
+    letter-spacing: 0;
+    text-transform: none;
+}
+@media (hover: none), (pointer: coarse) {
+    kbd.kbd-hint { display: none; }
+}
+
+/* Zähler, dessen Ziffern einrollen */
+.counter { display: inline-flex; font-weight: 700; color: var(--nz-ink); font-variant-numeric: tabular-nums; }
+.counter .d { display: inline-block; }
+.counter .d.is-roll { animation: nz-roll-in 420ms var(--nz-spring); }
+@keyframes nz-roll-in { from { transform: translateY(-.9em); opacity: 0; } }
+
+/* Toasts: schwarz, harter Signal-Schatten */
+.toasts {
+    position: fixed;
+    left: 50%;
+    bottom: 1.25rem;
+    transform: translateX(-50%);
+    width: min(92vw, 440px);
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    z-index: 50;
+    pointer-events: none;
+}
+.toast {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .8rem 1rem;
+    background: var(--nz-ink);
+    color: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    box-shadow: 4px 4px 0 0 var(--nz-signal);
+    font-family: var(--nz-f-mono);
+    font-size: .8rem;
+    pointer-events: auto;
+    transform: translateY(1.5rem);
+    opacity: 0;
+    transition: transform 260ms var(--nz-spring), opacity var(--nz-dur) var(--nz-ease);
+}
+.toast.is-in  { transform: none; opacity: 1; }
+.toast.is-out { transform: translateY(.8rem); opacity: 0; }
+.toast-action {
+    margin-left: auto;
+    flex: none;
+    padding: .35rem .65rem;
+    background: var(--nz-signal);
+    color: var(--nz-ink);
+    border: var(--nz-stroke-rule) solid var(--nz-bg);
+    border-radius: 0;
+    font-family: var(--nz-f-mono);
+    font-size: .66rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.toast-action:hover { background: var(--nz-bg); }
+.toast-action:focus-visible { outline: 3px solid var(--nz-signal); outline-offset: 2px; }
+.toast-action kbd.kbd-hint { margin-left: .4em; }
+.toast-bar {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 3px;
+    background: var(--nz-signal);
+    transform-origin: left;
+    animation: nz-shrink linear forwards;
+}
+@keyframes nz-shrink { to { transform: scaleX(0); } }
+
+/* Konfetti: 6 × 6 — dieselbe Marke wie der Signatur-Punkt der Icons */
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
+.confetti i { position: absolute; width: 6px; height: 6px; background: var(--nz-signal); }
+.confetti i.k { background: var(--nz-ink); }
+.confetti i.l { width: 9px; height: 9px; }
+
+/* Verwaltung: Filter, Zeilen, Klick-Balken */
+.filter-row { position: relative; margin-bottom: 1.1rem; }
+.filter { padding-right: 2.5rem !important; }
+.filter-row .kbd-hint { position: absolute; right: .7rem; top: 50%; transform: translateY(-50%); color: var(--nz-ink-70); }
+input[type="search"].filter {
+    width: 100%;
+    padding: .55rem .75rem;
+    background: var(--nz-bg);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    font-size: 1rem;
+    font-family: var(--nz-f-mono);
+    color: var(--nz-ink);
+    outline: none;
+    -webkit-appearance: none;
+}
+input[type="search"].filter:focus-visible { box-shadow: var(--nz-shadow-sm); }
+
+.links tr.is-leaving td { animation: nz-row-out 240ms var(--nz-ease) forwards; }
+@keyframes nz-row-out { to { transform: translateX(2.5rem); opacity: 0; } }
+.links tr.is-back td { animation: nz-row-back 520ms var(--nz-spring); }
+@keyframes nz-row-back { 0% { transform: translateX(-1.5rem); opacity: 0; background: var(--nz-signal-soft); } 60% { background: var(--nz-signal-soft); } }
+
+.col-hits { position: relative; }
+.col-hits::after {
+    content: "";
+    position: absolute;
+    left: .7rem;
+    bottom: .3rem;
+    height: 3px;
+    width: calc((100% - 1.4rem) * var(--p, 0));
+    background: var(--nz-signal);
+    transition: width 700ms var(--nz-spring);
+}
+
+.btn-row {
+    margin-right: .35rem;
+    padding: .3rem .6rem;
+    background: transparent;
+    color: var(--nz-ink);
+    border: var(--nz-stroke-rule) solid var(--nz-ink);
+    border-radius: 0;
+    cursor: pointer;
+    font-family: var(--nz-f-mono);
+    font-size: .64rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    transition: background var(--nz-dur) var(--nz-ease), transform var(--nz-dur) var(--nz-ease), box-shadow var(--nz-dur) var(--nz-ease);
+}
+.btn-row:hover  { background: var(--nz-signal); box-shadow: 2px 2px 0 0 var(--nz-ink); transform: translate(-1px, -1px); }
+.btn-row:active { box-shadow: none; transform: translate(1px, 1px); }
+.btn-row:focus-visible { outline: 3px solid var(--nz-ink); outline-offset: 3px; }
+.col-act form { display: inline-flex; align-items: center; }
+
+/* Wer weniger Bewegung will, bekommt sie: Rückmeldung bleibt (Farbe, Text,
+   Zustände), nur das Wackeln, Hüpfen und Rollen entfällt. */
 @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; }
+    *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
 /* Schmalere Displays: Spalten fallen von hinten weg, damit „Löschen"
@@ -412,4 +697,5 @@ footer a:hover { color: var(--nz-ink); background: var(--nz-signal); }
 
     .col-target { max-width: 118px; font-size: .72rem; }
     .btn-del    { padding: .3rem .45rem; font-size: .6rem; letter-spacing: .04em; }
+    .btn-row    { display: none !important; }
 }

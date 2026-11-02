@@ -121,6 +121,19 @@ jobs:
           fi
           echo "✓ keine inline-style-Attribute"
 
+      # Die Spielwiese auf GitHub Pages wird aus index.php gerendert. Bricht eine
+      # Änderung am Markup den Bau, soll das hier auffallen und nicht erst
+      # beim Deploy nach dem Merge.
+      - name: Spielwiese lässt sich bauen
+        run: |
+          set -e
+          .github/build-demo.sh /tmp/site
+          grep -q 'data-demo' /tmp/site/index.html
+          if grep -q 'csrf_token' /tmp/site/index.html; then
+            echo "✗ Spielwiese enthält ein CSRF-Token"; exit 1
+          fi
+          echo "✓ Spielwiese gebaut, im Demo-Modus, ohne Token"
+
       # Ausdrücklich auch 127.0.0.1: hinter dem nginx-Proxy von Plesk kann
       # jede Anfrage von dort zu kommen scheinen.
       - name: Auth ist fail-closed
