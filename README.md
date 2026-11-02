@@ -219,7 +219,7 @@ apt install php-apcu
 
 | Maßnahme | Details |
 |---|---|
-| **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.local.php` |
+| **Passwortschutz** | HTTP Basic Auth via `requireAuth()`, bcrypt-Hash in `config.local.php`. Funktioniert mit `mod_php` und unter PHP-FPM (Plesk): `.htaccess` reicht den Authorization-Header durch, `basicAuthCredentials()` liest ihn aus |
 | **Fail-closed** | Fehlt der Hash, sperrt `requireAuth()` den Zugang (HTTP 503) statt ihn zu öffnen — ohne Ausnahme |
 | **Repo-Dateien** | `README.md`, `.gitignore`, `.github/` liefert `.htaccess` nicht aus (HTTP 404), obwohl Plesk sie in den Web-Root legt |
 | **Reservierte Slugs** | Slugs, die wie eine vorhandene Datei oder ein Ordner heißen (`assets`, `storage` …), werden abgelehnt — sie wären nie erreichbar |
@@ -300,6 +300,7 @@ Die Pipeline läuft bei jedem Push auf `main` und bei Pull Requests.
 | **Kein Dritt-CDN** | Keine Referenz auf `fonts.googleapis.com` / `fonts.gstatic.com` |
 | **Keine inline-Styles** | Kein `style="…"` — die CSP (`style-src 'self'`) würde es verwerfen |
 | **Fail-closed** | `requireAuth()` lässt ohne Hash niemanden durch, auch nicht `127.0.0.1` |
+| **Anmeldung unter PHP-FPM** | `requireAuth()` akzeptiert die Zugangsdaten auch, wenn nur der rohe Header ankommt |
 | **Spielwiese baut** | `.github/build-demo.sh` läuft durch, Ergebnis im Demo-Modus und ohne CSRF-Token |
 | **Keine Inline-Handler** | Kein `onsubmit="…"` o. ä. — die CSP würde ihn still ignorieren |
 | **Dateischutz** | `.htaccess` sperrt `config.php`, `config.local.php` und `functions.php` |

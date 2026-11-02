@@ -150,6 +150,30 @@ jobs:
           done
           echo "✓ Ohne ADMIN_PASSWORD_HASH bleibt der Zugang gesperrt, auch über Loopback"
 
+      # Unter PHP-FPM (bei Plesk der Normalfall) kommt die Anmeldung nur als
+      # roher Authorization-Header an. So fiel einmal jede Anmeldung durch,
+      # auch mit richtigem Passwort.
+      - name: Anmeldung auch unter PHP-FPM
+        run: |
+          set -e
+          for var in HTTP_AUTHORIZATION REDIRECT_HTTP_AUTHORIZATION; do
+            VAR=$var php -r '
+              define("ADMIN_PASSWORD_HASH", password_hash("geheim", PASSWORD_BCRYPT));
+              require "config.php"; require "functions.php";
+              $_SERVER[getenv("VAR")] = "Basic " . base64_encode("admin:geheim");
+              requireAuth();
+              echo "ok";
+            ' | grep -qx ok || { echo "✗ Anmeldung über $var scheitert"; exit 1; }
+            VAR=$var php -r '
+              define("ADMIN_PASSWORD_HASH", password_hash("geheim", PASSWORD_BCRYPT));
+              require "config.php"; require "functions.php";
+              $_SERVER[getenv("VAR")] = "Basic " . base64_encode("admin:falsch");
+              requireAuth();
+              echo "ok";
+            ' | grep -qx ok && { echo "✗ falsches Passwort über $var akzeptiert"; exit 1; }
+          done
+          echo "✓ Anmeldung klappt auch, wenn nur der Header ankommt"
+
       # Die CSP erlaubt kein Inline-JavaScript. Ein onsubmit-/onclick-Attribut
       # würde still ignoriert — so fiel einmal die Lösch-Rückfrage weg.
       - name: Keine Inline-Event-Handler
